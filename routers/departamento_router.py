@@ -6,8 +6,7 @@ from services.departamento_service import DepartamentoService
 from schemas.departamento_schemas import (
     DepartamentoCreate,
     DepartamentoUpdate,
-    DepartamentoResponse,
-    DepartamentoConEstadisticas
+    DepartamentoResponse
 )
 
 router = APIRouter(

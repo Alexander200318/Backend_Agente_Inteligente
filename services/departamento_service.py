@@ -3,7 +3,7 @@ from typing import List, Optional
 from repositories.departamento_repo import DepartamentoRepository
 from schemas.departamento_schemas import DepartamentoCreate, DepartamentoUpdate
 from models.departamento import Departamento
-from services.ollama_service import DepartamentoOllamaService
+from ollama_config.ollama_service import DepartamentoOllamaService
 from exceptions.base import ValidationException
 
 class DepartamentoService:
