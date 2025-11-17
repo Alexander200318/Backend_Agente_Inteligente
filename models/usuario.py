@@ -44,8 +44,18 @@ class Usuario(Base):
     
     # Relationships
     persona = relationship("Persona", back_populates="usuario", foreign_keys=[id_persona])
-    roles = relationship("UsuarioRol", back_populates="usuario", cascade="all, delete-orphan")
-    agentes_asignados = relationship("UsuarioAgente", back_populates="usuario", cascade="all, delete-orphan")
+    roles = relationship(
+        "UsuarioRol", 
+        back_populates="usuario", 
+        cascade="all, delete-orphan",
+        foreign_keys="[UsuarioRol.id_usuario]"
+    )
+    agentes_asignados = relationship(
+        "UsuarioAgente", 
+        back_populates="usuario", 
+        cascade="all, delete-orphan",
+        foreign_keys="[UsuarioAgente.id_usuario]"
+    )
     
     # Self-referential para creado_por
     creador = relationship("Usuario", remote_side=[id_usuario], foreign_keys=[creado_por])

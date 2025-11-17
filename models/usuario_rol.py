@@ -24,9 +24,16 @@ class UsuarioRol(Base):
     activo = Column(Boolean, default=True, index=True)
     
     # Relationships
-    usuario = relationship("Usuario", foreign_keys=[id_usuario], back_populates="roles")
+    usuario = relationship(
+        "Usuario", 
+        foreign_keys=[id_usuario], 
+        back_populates="roles"
+    )
     rol = relationship("Rol", back_populates="usuarios_rol")
-    asignador = relationship("Usuario", foreign_keys=[asignado_por])
+    asignador = relationship(
+        "Usuario", 
+        foreign_keys=[asignado_por]
+    )
 
     def __repr__(self):
         return f"<UsuarioRol(usuario_id={self.id_usuario}, rol_id={self.id_rol})>"

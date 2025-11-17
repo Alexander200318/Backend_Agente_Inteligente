@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
+
 class UsuarioAgenteBase(BaseModel):
     puede_ver_contenido: bool = True
     puede_crear_contenido: bool = True

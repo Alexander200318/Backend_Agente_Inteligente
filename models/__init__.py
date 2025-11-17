@@ -1,42 +1,45 @@
 """
 Modelos SQLAlchemy del sistema CallCenterAI
 Importar todos los modelos para que SQLAlchemy los registre correctamente
+IMPORTANTE: El orden de importación importa para las relaciones
 """
 
-# Modelos base
+# 1. Modelos base (sin dependencias)
 from models.departamento import Departamento
 from models.persona import Persona
+
+# 2. Usuario (depende de Persona y Departamento)
 from models.usuario import Usuario
 
-# Roles y permisos
+# 3. Roles (dependen de Usuario)
 from models.rol import Rol
 from models.usuario_rol import UsuarioRol
 
-# Agentes virtuales
+# 4. Agentes virtuales
 from models.agente_virtual import AgenteVirtual
 from models.usuario_agente import UsuarioAgente
 from models.departamento_agente import DepartamentoAgente
 
-# Contenido y base de conocimiento
+# 5. Contenido y base de conocimiento
 from models.categoria import Categoria
 from models.unidad_contenido import UnidadContenido
 
-# Visitantes y conversaciones
+# 6. Visitantes y conversaciones
 from models.visitante_anonimo import VisitanteAnonimo
 from models.conversacion_sync import ConversacionSync
 
-# Métricas
+# 7. Métricas
 from models.metrica_diaria_agente import MetricaDiariaAgente
 from models.metrica_contenido import MetricaContenido
 
-# Notificaciones
+# 8. Notificaciones
 from models.notificacion_usuario import NotificacionUsuario
 
-# API e integración
+# 9. API e integración
 from models.api_key import APIKey
 from models.widget_config import WidgetConfig
 
-# Configuración
+# 10. Configuración
 from models.configuracion_sistema import ConfiguracionSistema
 
 __all__ = [
