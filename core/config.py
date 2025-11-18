@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list = [
         "http://localhost:3000",
         "http://localhost:5173",
-        "http://localhost:8000"
+        "http://localhost:8000",
+        "http://localhost:8081",      # ✅ Agrega este (Expo Web)
+        "http://127.0.0.1:8081",      # ✅ Agrega este también
+        "http://192.168.5.6:8081",    # ✅ Para dispositivos móviles en la misma red
     ]
     
     # Otros
