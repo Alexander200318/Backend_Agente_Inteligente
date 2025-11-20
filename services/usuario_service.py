@@ -219,3 +219,50 @@ class UsuarioService:
             "usuarios_bloqueados": self.usuario_repo.count(estado="bloqueado"),
             "usuarios_suspendidos": self.usuario_repo.count(estado="suspendido")
         }
+    
+    
+    def crear_usuario_persona_existente(
+        self,
+        id_persona: int,
+        username: str,
+        email: str,
+        password: str,
+        requiere_cambio_password: bool = True
+    ) -> Usuario:
+        """Crear usuario para persona ya registrada"""
+        
+        # Verificar que la persona existe
+        persona = self.usuario_repo.get_persona_by_id(id_persona)
+        if not persona:
+            raise ValidationException("La persona no existe")
+        
+        # Verificar que la persona no tenga usuario
+        if self.usuario_repo.exists_by_persona_id(id_persona):
+            raise ValidationException("La persona ya tiene un usuario asociado")
+        
+        # Verificar unicidad de username y email
+        if self.usuario_repo.exists_by_username(username):
+            raise ValidationException("El nombre de usuario ya está en uso")
+        
+        if self.usuario_repo.exists_by_email(email):
+            raise ValidationException("El email ya está en uso")
+        
+        # Hashear contraseña
+        hashed_password = self._hash_password(password)
+        
+        # Crear usuario
+        usuario = Usuario(
+            id_persona=id_persona,
+            username=username,
+            email=email,
+            password=hashed_password,
+            estado="activo",
+            requiere_cambio_password=requiere_cambio_password
+        )
+        
+        self.usuario_repo.add(usuario)
+        self.db.commit()
+        self.db.refresh(usuario)
+        
+        return usuario
+    
