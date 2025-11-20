@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────
+#  ENTORNOS VIRTUALES / VARIABLES
+# ─────────────────────────────────────────
+venv/
+.env
+.env.*
+*.env
+
+# ─────────────────────────────────────────
+#  CHROMADB (Evitar subir colecciones)
+# ─────────────────────────────────────────
+chroma/
+vectorstore/
+**/.cache/chroma/
+**/chroma/
+**/vectorstore/
+
+# ─────────────────────────────────────────
+#  HUGGINGFACE / SENTENCE TRANSFORMERS CACHE
+# ─────────────────────────────────────────
+**/.cache/huggingface/
+**/.cache/torch/
+**/.cache/sentence-transformers/
+
+# ─────────────────────────────────────────
+#  PYTHON CACHE
+# ─────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite
+*.db
+*.log
+
+# ─────────────────────────────────────────
+#  ARCHIVOS TEMPORALES / BACKUPS
+# ─────────────────────────────────────────
+*.tmp
+*.bak
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ─────────────────────────────────────────
+#  EDITORES (VSCode, PyCharm)
+# ─────────────────────────────────────────
+.vscode/
+.idea/

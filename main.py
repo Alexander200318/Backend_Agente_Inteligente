@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 
 from core.config import settings
 from database.init_db import init_db
-from routers import usuario_router
 from exceptions.base import BaseAPIException
 
 # Lifespan para inicializar DB al arrancar
@@ -114,7 +113,12 @@ from routers import (
     metrica_contenido_router,
     agente_virtual_router,
     visitante_anonimo_router,
-    conversacion_sync_router
+    conversacion_sync_router,
+    chat_router,
+    chat_auto_router,
+    agentes_router,
+    embeddings_router,
+    persona_router
 )
 
 # Incluir routers
@@ -130,7 +134,11 @@ app.include_router(metrica_contenido_router.router, prefix="/api/v1")
 app.include_router(agente_virtual_router.router, prefix="/api/v1")
 app.include_router(visitante_anonimo_router.router, prefix="/api/v1")
 app.include_router(conversacion_sync_router.router, prefix="/api/v1")
-
+app.include_router(chat_router.router, prefix="/api/v1")
+app.include_router(chat_auto_router.router, prefix="/api/v1")
+app.include_router(agentes_router.router, prefix="/api/v1")
+app.include_router(embeddings_router.router, prefix="/api/v1")
+app.include_router(persona_router.router, prefix="/api/v1")
 
 # ==================== HEALTH CHECK ====================
 

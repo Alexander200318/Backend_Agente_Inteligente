@@ -1,0 +1,10 @@
+SYSTEM:
+{system}
+
+CONTEXT:
+{contexto}
+
+USER:
+{pregunta}
+
+RESPONDER:

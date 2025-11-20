@@ -10,7 +10,7 @@ cryptography==42.0.0
 
 # Validación y configuración
 pydantic
-pydantic-settings==2.1.0
+pydantic-settings
 python-dotenv
 
 # Seguridad y autenticación
@@ -23,6 +23,24 @@ email-validator==2.1.0
 
 # Integración con Ollama
 requests
+ollama
+
+# ============
+#   RAG / IA
+# ============
+
+# Vector Store
+chromadb
+
+# Embeddings locales (recomendado)
+sentence-transformers
+
+# Si quieres modelos más pesados (opcional)
+transformers
+torch
+
+# Archivos / markdown (opcional pero útil para RAG)
+markdown
 
 
 
