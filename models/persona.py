@@ -44,7 +44,7 @@ class Persona(Base):
     
     # Información institucional
     tipo_persona = Column(Enum(TipoPersonaEnum), default=TipoPersonaEnum.administrativo)
-    id_departamento = Column(Integer, ForeignKey('Departamento.id_departamento', ondelete='SET NULL'))
+    id_departamento = Column(Integer, ForeignKey('Departamento.id_departamento', ondelete='SET NULL'), nullable=True)
     cargo = Column(String(100))
     fecha_ingreso_institucion = Column(Date)
     

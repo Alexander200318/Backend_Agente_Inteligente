@@ -1,20 +1,208 @@
 # app/rag/rag_service.py
-from typing import List, Dict
+from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from models.unidad_contenido import UnidadContenido
 from models.categoria import Categoria
-from models.agente_virtual import AgenteVirtual
 from rag.chroma_config import ChromaDBConfig
+from config.redis_config import get_redis_client
 import uuid
+import json
+import hashlib
 
 class RAGService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, use_cache: bool = True):
         self.db = db
         self.chroma = ChromaDBConfig()
-        # Modelo de embeddings (local, rápido)
+        
+        # Modelos de IA
         self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        
+        # 🔥 Redis cache
+        self.use_cache = use_cache
+        self.redis = None
+        self._cache_ttl_seconds = 3600  # 1 hora
+        
+        if self.use_cache:
+            try:
+                self.redis = get_redis_client()
+            except Exception as e:
+                print(f"⚠️  Redis no disponible, funcionando sin caché: {e}")
+                self.use_cache = False
 
+    def _get_cache_key(self, id_agente: int, query: str, n_results: int, use_reranking: bool) -> str:
+        """Genera clave única para caché"""
+        data = f"rag:{id_agente}:{query}:{n_results}:{use_reranking}"
+        return hashlib.md5(data.encode()).hexdigest()
+
+    def _get_from_cache(self, cache_key: str) -> Optional[List[Dict]]:
+        """Obtiene resultado del caché"""
+        if not self.use_cache or not self.redis:
+            return None
+        
+        try:
+            cached = self.redis.get(cache_key)
+            if cached:
+                return json.loads(cached)
+        except Exception as e:
+            print(f"⚠️  Error leyendo caché: {e}")
+        
+        return None
+
+    def _save_to_cache(self, cache_key: str, results: List[Dict]):
+        """Guarda resultado en caché"""
+        if not self.use_cache or not self.redis:
+            return
+        
+        try:
+            self.redis.setex(
+                cache_key,
+                self._cache_ttl_seconds,
+                json.dumps(results)
+            )
+        except Exception as e:
+            print(f"⚠️  Error guardando en caché: {e}")
+
+    def search(
+        self, 
+        id_agente: int, 
+        query: str, 
+        n_results: int = 4,
+        use_reranking: bool = True
+    ) -> List[Dict]:
+        """
+        Busca documentos relevantes con caché Redis
+        """
+        # 🔥 Verificar caché primero
+        cache_key = self._get_cache_key(id_agente, query, n_results, use_reranking)
+        cached_results = self._get_from_cache(cache_key)
+        
+        if cached_results is not None:
+            print(f"✅ Cache HIT: '{query[:50]}...'")
+            return cached_results
+        
+        print(f"❌ Cache MISS: '{query[:50]}...' - Buscando...")
+        
+        # Búsqueda en ChromaDB
+        collection = self.create_collection_if_missing(id_agente)
+        q_emb = self.embedder.encode([query]).tolist()[0]
+        
+        # Traer más candidatos si vamos a re-rankear
+        initial_results = n_results * 3 if use_reranking else n_results
+        res = collection.query(query_embeddings=[q_emb], n_results=initial_results)
+        
+        if not res:
+            return []
+        
+        docs = res.get("documents", [[]])[0]
+        metas = res.get("metadatas", [[]])[0]
+        ids = res.get("ids", [[]])[0]
+        
+        if not docs:
+            return []
+        
+        # 🔥 Re-ranking con CrossEncoder
+        if use_reranking and len(docs) > 0:
+            print(f"🔄 Re-rankeando {len(docs)} documentos...")
+            
+            # Crear pares (pregunta, documento)
+            pairs = [[query, doc] for doc in docs]
+            
+            # Calcular scores de relevancia
+            scores = self.reranker.predict(pairs)
+            
+            # Ordenar por score descendente
+            ranked_indices = sorted(
+                range(len(scores)), 
+                key=lambda i: scores[i], 
+                reverse=True
+            )
+            
+            # Tomar solo los top n_results
+            ranked_indices = ranked_indices[:n_results]
+            
+            # Construir resultados ordenados
+            results = []
+            for idx in ranked_indices:
+                results.append({
+                    "id": ids[idx],
+                    "document": docs[idx],
+                    "metadata": metas[idx],
+                    "score": float(scores[idx]),
+                    "reranked": True
+                })
+        else:
+            # Sin re-ranking
+            results = []
+            for i in range(min(len(docs), n_results)):
+                results.append({
+                    "id": ids[i],
+                    "document": docs[i],
+                    "metadata": metas[i],
+                    "reranked": False
+                })
+        
+        # 🔥 Guardar en caché
+        self._save_to_cache(cache_key, results)
+        
+        return results
+
+    def clear_cache(self, id_agente: Optional[int] = None):
+        """
+        Limpia el caché de Redis
+        
+        Args:
+            id_agente: Si se especifica, solo limpia ese agente. Si es None, limpia todo.
+        """
+        if not self.use_cache or not self.redis:
+            print("⚠️  Caché no está habilitado")
+            return
+        
+        try:
+            if id_agente is None:
+                # Limpiar todo el caché RAG
+                keys = self.redis.keys("rag:*")
+                if keys:
+                    self.redis.delete(*keys)
+                    print(f"🗑️  {len(keys)} entradas de caché limpiadas")
+                else:
+                    print("ℹ️  No hay entradas en caché")
+            else:
+                # Limpiar solo un agente específico
+                pattern = f"rag:{id_agente}:*"
+                keys = self.redis.keys(pattern)
+                if keys:
+                    self.redis.delete(*keys)
+                    print(f"🗑️  {len(keys)} entradas del agente {id_agente} limpiadas")
+                else:
+                    print(f"ℹ️  No hay caché para el agente {id_agente}")
+        except Exception as e:
+            print(f"❌ Error limpiando caché: {e}")
+
+    def get_cache_stats(self) -> Dict:
+        """Obtiene estadísticas del caché"""
+        if not self.use_cache or not self.redis:
+            return {"enabled": False}
+        
+        try:
+            info = self.redis.info("stats")
+            keys_count = len(self.redis.keys("rag:*"))
+            
+            return {
+                "enabled": True,
+                "total_keys": keys_count,
+                "hits": info.get("keyspace_hits", 0),
+                "misses": info.get("keyspace_misses", 0),
+                "hit_rate": info.get("keyspace_hits", 0) / max(
+                    info.get("keyspace_hits", 0) + info.get("keyspace_misses", 0), 1
+                ) * 100
+            }
+        except Exception as e:
+            return {"enabled": True, "error": str(e)}
+
+    # ========== Resto de métodos sin cambios ==========
+    
     def _collection_name(self, id_agente: int) -> str:
         return f"agente_{id_agente}"
 
@@ -23,9 +211,7 @@ class RAGService:
         return self.chroma.get_or_create_collection(name)
 
     def ingest_unidad(self, unidad: UnidadContenido, categoria: Categoria):
-        """
-        Indexa UNA unidad de contenido (upsert).
-        """
+        """Indexa UNA unidad de contenido"""
         id_agente = categoria.id_agente
         collection = self.create_collection_if_missing(id_agente)
 
@@ -44,9 +230,14 @@ class RAGService:
                 "titulo": unidad.titulo
             }]
         )
+        
+        # 🔥 Limpiar caché del agente porque cambió el contenido
+        self.clear_cache(id_agente)
+        
         return {"ok": True, "id": doc_id}
 
     def ingest_categoria(self, categoria: Categoria):
+        """Indexa una categoría"""
         id_agente = categoria.id_agente
         collection = self.create_collection_if_missing(id_agente)
 
@@ -63,24 +254,32 @@ class RAGService:
                 "id_categoria": categoria.id_categoria
             }]
         )
+        
+        # 🔥 Limpiar caché del agente
+        self.clear_cache(id_agente)
+        
         return {"ok": True, "id": doc_id}
 
+    def indexar_categoria(self, categoria: Categoria):
+        return self.ingest_categoria(categoria)
+
     def reindex_agent(self, id_agente: int) -> Dict:
-        """
-        Re-indexa TODO el contenido de un agente: categorias + unidades.
-        Útil al crear el agente o al hacer una sincronización completa.
-        """
+        """Re-indexa TODO el contenido de un agente"""
+        
+        # 🔥 Limpiar caché antes de reindexar
+        print(f"🔄 Limpiando caché del agente {id_agente}...")
+        self.clear_cache(id_agente)
+        
         collection = self.create_collection_if_missing(id_agente)
 
-        # Borrado simple: eliminar colección y recrear (Chroma no tiene drop_collection en todas las versiones)
+        # Borrar colección y recrear
         try:
-            # Try to delete collection if exists (some versions provide it)
             self.chroma.client.delete_collection(name=collection.name)
         except Exception:
             pass
         collection = self.create_collection_if_missing(id_agente)
 
-        # Obtener categorías y unidades del agente
+        # Obtener categorías y unidades
         categorias = self.db.query(Categoria).filter(
             Categoria.id_agente == id_agente,
             Categoria.activo == True
@@ -115,24 +314,19 @@ class RAGService:
 
         if docs:
             embeddings = self.embedder.encode(docs).tolist()
-            collection.add(documents=docs, embeddings=embeddings, metadatas=metadatas, ids=ids)
+            collection.add(
+                documents=docs, 
+                embeddings=embeddings, 
+                metadatas=metadatas, 
+                ids=ids
+            )
 
-        return {"ok": True, "total_docs": len(docs), "collection": collection.name}
-
-    def search(self, id_agente: int, query: str, n_results: int = 4) -> List[Dict]:
-        collection = self.create_collection_if_missing(id_agente)
-        q_emb = self.embedder.encode([query]).tolist()[0]
-        res = collection.query(query_embeddings=[q_emb], n_results=n_results)
-        # res: dict with keys 'ids','documents','metadatas','distances'
-        if not res:
-            return []
-        docs = res.get("documents", [[]])[0]
-        metas = res.get("metadatas", [[]])[0]
-        ids = res.get("ids", [[]])[0]
-        results = []
-        for i, d in enumerate(docs):
-            results.append({"id": ids[i], "document": d, "metadata": metas[i]})
-        return results
+        return {
+            "ok": True, 
+            "total_docs": len(docs), 
+            "collection": collection.name,
+            "cache_cleared": True
+        }
 
     def _format_document(self, unidad: UnidadContenido, categoria: Categoria) -> str:
         title = unidad.titulo or ""
@@ -151,13 +345,14 @@ class RAGService:
         return "\n\n".join([p for p in parts if p])
 
     def _build_categoria_path(self, categoria: Categoria) -> str:
-        # construye cadena padre>hijo si tu modelo tiene id_categoria_padre; si no, devuelve nombre
         path = categoria.nombre
         try:
             current = categoria
             parts = [current.nombre]
             while getattr(current, "id_categoria_padre", None):
-                parent = self.db.query(Categoria).filter(Categoria.id_categoria == current.id_categoria_padre).first()
+                parent = self.db.query(Categoria).filter(
+                    Categoria.id_categoria == current.id_categoria_padre
+                ).first()
                 if not parent:
                     break
                 parts.insert(0, parent.nombre)

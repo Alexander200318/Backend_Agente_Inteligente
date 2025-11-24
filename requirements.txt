@@ -42,5 +42,8 @@ torch
 # Archivos / markdown (opcional pero útil para RAG)
 markdown
 
+# Cache
+redis==5.0.0
+
 
 

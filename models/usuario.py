@@ -40,7 +40,7 @@ class Usuario(Base):
     # Auditoría
     fecha_creacion = Column(DateTime, server_default=func.current_timestamp())
     fecha_actualizacion = Column(DateTime, onupdate=func.current_timestamp())
-    creado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'))
+    creado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'), nullable=True)
     
     # Relationships
     persona = relationship("Persona", back_populates="usuario", foreign_keys=[id_persona])

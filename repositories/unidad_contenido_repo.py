@@ -1,8 +1,6 @@
 from models.unidad_contenido import UnidadContenido
-
-
 from sqlalchemy.orm import Session
-from datetime import  datetime
+from datetime import datetime
 from typing import Optional
 from exceptions.base import NotFoundException, DatabaseException
 from schemas.unidad_contenido_schemas import UnidadContenidoCreate, UnidadContenidoUpdate
@@ -14,7 +12,9 @@ class UnidadContenidoRepository:
     
     def create(self, data: UnidadContenidoCreate, creado_por: int):
         try:
-            contenido = UnidadContenido(**data.dict(), creado_por=creado_por, estado="borrador")
+            # 🔥 CAMBIO: Remover estado="borrador" hardcodeado
+            contenido_dict = data.dict()
+            contenido = UnidadContenido(**contenido_dict, creado_por=creado_por)
             self.db.add(contenido)
             self.db.commit()
             self.db.refresh(contenido)

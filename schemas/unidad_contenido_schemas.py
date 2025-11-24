@@ -1,10 +1,8 @@
+# schemas/unidad_contenido.py
 from datetime import date
-
-from typing import Optional
+from typing import Optional, Literal
 from datetime import date, datetime
 from pydantic import BaseModel, Field
-
-
 
 class UnidadContenidoBase(BaseModel):
     titulo: str = Field(..., min_length=5, max_length=200)
@@ -20,6 +18,8 @@ class UnidadContenidoCreate(UnidadContenidoBase):
     id_agente: int
     id_categoria: int
     id_departamento: Optional[int] = None
+    # 🔥 Usar Literal para validar solo valores válidos
+    estado: Literal["borrador", "revision", "activo", "inactivo", "archivado"] = "borrador"
 
 class UnidadContenidoUpdate(BaseModel):
     titulo: Optional[str] = None
@@ -28,7 +28,7 @@ class UnidadContenidoUpdate(BaseModel):
     palabras_clave: Optional[str] = None
     etiquetas: Optional[str] = None
     prioridad: Optional[int] = None
-    estado: Optional[str] = None
+    estado: Optional[Literal["borrador", "revision", "activo", "inactivo", "archivado"]] = None
     fecha_vigencia_inicio: Optional[date] = None
     fecha_vigencia_fin: Optional[date] = None
 
@@ -39,5 +39,6 @@ class UnidadContenidoResponse(UnidadContenidoBase):
     estado: str
     version: int
     fecha_creacion: datetime
+    
     class Config:
         from_attributes = True

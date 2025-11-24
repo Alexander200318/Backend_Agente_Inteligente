@@ -8,7 +8,7 @@ class CategoriaService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = CategoriaRepository(db)
-        self.rag = RAGService()
+        self.rag = RAGService(db)
     
     def crear_categoria(self, data: CategoriaCreate, creado_por: Optional[int] = None):
         categoria = self.repo.create(data, creado_por)

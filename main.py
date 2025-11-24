@@ -4,7 +4,10 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv  # 🔥 AGREGAR
 
+# 🔥 Cargar variables de entorno ANTES de importar settings
+load_dotenv()
 from core.config import settings
 from database.init_db import init_db
 from exceptions.base import BaseAPIException

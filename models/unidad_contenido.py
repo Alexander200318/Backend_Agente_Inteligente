@@ -70,10 +70,10 @@ class UnidadContenido(Base):
     # Auditoría
     fecha_creacion = Column(DateTime, server_default=func.current_timestamp())
     fecha_actualizacion = Column(DateTime, onupdate=func.current_timestamp())
-    creado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='RESTRICT'), nullable=False)
-    actualizado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'))
-    revisado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'))
-    publicado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'))
+    creado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='RESTRICT'), nullable=True)
+    actualizado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'), nullable=True)
+    revisado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'), nullable=True)
+    publicado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'), nullable=True)
     fecha_publicacion = Column(DateTime)
     
     # Gestión de revisiones
