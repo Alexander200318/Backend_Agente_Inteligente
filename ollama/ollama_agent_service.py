@@ -42,7 +42,9 @@ class OllamaAgentService:
                 id_agente=id_agente, 
                 query=pregunta, 
                 n_results=k,
-                use_reranking=use_reranking
+                use_reranking=use_reranking,
+                use_priority_boost=True,  # 🔥 Habilitar boost
+                priority_boost_factor=0.4  # 🔥 Ajustar peso (15% por punto)
             )
             
             # Construir contexto legible

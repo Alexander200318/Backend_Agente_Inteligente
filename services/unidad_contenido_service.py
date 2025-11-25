@@ -63,3 +63,26 @@ class UnidadContenidoService:
         contenido = self.repo.publicar(id_contenido, publicado_por)
         
         return contenido
+    
+
+
+    def eliminar_contenido(self, id_contenido: int) -> dict:
+        """
+        Elimina contenido de BD y ChromaDB
+        """
+        # 1. Obtener el contenido antes de eliminar (necesitamos id_agente)
+        contenido = self.repo.get_by_id(id_contenido)
+        id_agente = contenido.id_agente
+        
+        # 2. Eliminar de ChromaDB primero
+        rag_result = self.rag.delete_unidad(id_contenido, id_agente)
+        
+        # 3. Eliminar de la base de datos
+        db_result = self.repo.delete(id_contenido)
+        
+        return {
+            "ok": True,
+            "id_contenido": id_contenido,
+            "deleted_from_chromadb": rag_result.get("ok", False),
+            "deleted_from_database": db_result
+        }

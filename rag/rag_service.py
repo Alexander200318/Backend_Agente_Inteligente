@@ -69,12 +69,18 @@ class RAGService:
         id_agente: int, 
         query: str, 
         n_results: int = 4,
-        use_reranking: bool = True
+        use_reranking: bool = True,
+        use_priority_boost: bool = True,  # 🔥 NUEVO parámetro
+        priority_boost_factor: float = 0.1  # 🔥 Factor de boost
     ) -> List[Dict]:
         """
-        Busca documentos relevantes con caché Redis
+        Busca documentos relevantes con caché Redis y boost de prioridad
+        
+        Args:
+            use_priority_boost: Si True, aplica boost por prioridad
+            priority_boost_factor: Peso del boost (ej: 0.1 = +10% por cada punto de prioridad)
         """
-        # 🔥 Verificar caché primero
+        # Verificar caché primero
         cache_key = self._get_cache_key(id_agente, query, n_results, use_reranking)
         cached_results = self._get_from_cache(cache_key)
         
@@ -98,31 +104,42 @@ class RAGService:
         docs = res.get("documents", [[]])[0]
         metas = res.get("metadatas", [[]])[0]
         ids = res.get("ids", [[]])[0]
+        distances = res.get("distances", [[]])[0]  # 🔥 Obtener distancias
         
         if not docs:
             return []
         
-        # 🔥 Re-ranking con CrossEncoder
+        # Re-ranking con CrossEncoder
         if use_reranking and len(docs) > 0:
             print(f"🔄 Re-rankeando {len(docs)} documentos...")
             
-            # Crear pares (pregunta, documento)
             pairs = [[query, doc] for doc in docs]
-            
-            # Calcular scores de relevancia
             scores = self.reranker.predict(pairs)
             
-            # Ordenar por score descendente
+            # 🔥 APLICAR BOOST DE PRIORIDAD
+            if use_priority_boost:
+                boosted_scores = []
+                for i, score in enumerate(scores):
+                    prioridad = metas[i].get("prioridad", 5)  # Default 5 si no existe
+                    boost = prioridad * priority_boost_factor
+                    boosted_score = score + boost
+                    boosted_scores.append(boosted_score)
+                    
+                    # Debug
+                    if i < 3:  # Mostrar solo los primeros 3
+                        print(f"  Doc {i+1}: score={score:.3f} + boost={boost:.3f} = {boosted_score:.3f} (prioridad={prioridad})")
+                
+                scores = boosted_scores
+            
+            # Ordenar por score final (con boost incluido)
             ranked_indices = sorted(
                 range(len(scores)), 
                 key=lambda i: scores[i], 
                 reverse=True
             )
             
-            # Tomar solo los top n_results
             ranked_indices = ranked_indices[:n_results]
             
-            # Construir resultados ordenados
             results = []
             for idx in ranked_indices:
                 results.append({
@@ -130,24 +147,42 @@ class RAGService:
                     "document": docs[idx],
                     "metadata": metas[idx],
                     "score": float(scores[idx]),
+                    "base_score": float(self.reranker.predict([[query, docs[idx]]])[0]),  # Score original
+                    "priority": metas[idx].get("prioridad", 5),
                     "reranked": True
                 })
         else:
-            # Sin re-ranking
+            # Sin re-ranking, usar distancias de ChromaDB
             results = []
             for i in range(min(len(docs), n_results)):
+                # Convertir distancia a score (menor distancia = mayor score)
+                base_score = 1 / (1 + distances[i])
+                
+                # Aplicar boost de prioridad
+                if use_priority_boost:
+                    prioridad = metas[i].get("prioridad", 5)
+                    boost = prioridad * priority_boost_factor
+                    final_score = base_score + boost
+                else:
+                    final_score = base_score
+                
                 results.append({
                     "id": ids[i],
                     "document": docs[i],
                     "metadata": metas[i],
+                    "score": final_score,
+                    "priority": metas[i].get("prioridad", 5),
                     "reranked": False
                 })
+            
+            # Ordenar por score final
+            results.sort(key=lambda x: x["score"], reverse=True)
         
-        # 🔥 Guardar en caché
+        # Guardar en caché
         self._save_to_cache(cache_key, results)
         
         return results
-
+        
     def clear_cache(self, id_agente: Optional[int] = None):
         """
         Limpia el caché de Redis
@@ -227,7 +262,8 @@ class RAGService:
                 "tipo": "unidad_contenido",
                 "id_contenido": unidad.id_contenido,
                 "id_categoria": unidad.id_categoria,
-                "titulo": unidad.titulo
+                "titulo": unidad.titulo,
+                "prioridad": unidad.prioridad
             }]
         )
         
@@ -266,7 +302,6 @@ class RAGService:
     def reindex_agent(self, id_agente: int) -> Dict:
         """Re-indexa TODO el contenido de un agente"""
         
-        # 🔥 Limpiar caché antes de reindexar
         print(f"🔄 Limpiando caché del agente {id_agente}...")
         self.clear_cache(id_agente)
         
@@ -293,7 +328,11 @@ class RAGService:
         for cat in categorias:
             text_cat = f"Categoria: {cat.nombre}\nDescripcion: {cat.descripcion or ''}"
             docs.append(text_cat)
-            metadatas.append({"tipo": "categoria", "id_categoria": cat.id_categoria})
+            metadatas.append({
+                "tipo": "categoria", 
+                "id_categoria": cat.id_categoria,
+                "prioridad": 5  # 🔥 Prioridad default para categorías
+            })
             ids.append(str(uuid.uuid4()))
 
             unidades = self.db.query(UnidadContenido).filter(
@@ -308,7 +347,8 @@ class RAGService:
                     "tipo": "unidad_contenido",
                     "id_contenido": u.id_contenido,
                     "id_categoria": u.id_categoria,
-                    "titulo": u.titulo
+                    "titulo": u.titulo,
+                    "prioridad": u.prioridad  # 🔥 AGREGAR PRIORIDAD
                 })
                 ids.append(str(uuid.uuid4()))
 
@@ -327,7 +367,7 @@ class RAGService:
             "collection": collection.name,
             "cache_cleared": True
         }
-
+    
     def _format_document(self, unidad: UnidadContenido, categoria: Categoria) -> str:
         title = unidad.titulo or ""
         resumen = getattr(unidad, "resumen", "") or ""
@@ -362,3 +402,29 @@ class RAGService:
             return " > ".join(parts)
         except Exception:
             return categoria.nombre
+        
+
+
+        # app/rag/rag_service.py
+
+    def delete_unidad(self, unidad_id: int, id_agente: int):
+        """
+        Elimina una unidad de contenido de ChromaDB
+        
+        Args:
+            unidad_id: ID de la unidad a eliminar
+            id_agente: ID del agente al que pertenece
+        """
+        collection = self.create_collection_if_missing(id_agente)
+        doc_id = f"unidad_{unidad_id}"
+        
+        try:
+            collection.delete(ids=[doc_id])
+            
+            # Limpiar caché del agente
+            self.clear_cache(id_agente)
+            
+            return {"ok": True, "id": doc_id, "deleted": True}
+        except Exception as e:
+            print(f"❌ Error eliminando de ChromaDB: {e}")
+            return {"ok": False, "error": str(e)}

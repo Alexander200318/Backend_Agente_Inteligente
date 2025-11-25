@@ -22,7 +22,7 @@ def test_rag_cache():
     # Primera búsqueda (MISS)
     print("\n1️⃣  Primera búsqueda (debería ser CACHE MISS):")
     start = time.time()
-    results1 = rag.search(id_agente, query, n_results=3, use_reranking=True)
+    results1 = rag.search(id_agente, query, n_results=3, use_reranking=True, use_priority_boost=True )
     print(f"\n   📄 Documento encontrado:")
     print(f"   Título: {results1[0]['metadata'].get('titulo', 'N/A')}")
     print(f"   Tipo: {results1[0]['metadata'].get('tipo', 'N/A')}")

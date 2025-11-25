@@ -56,3 +56,27 @@ class UnidadContenidoRepository:
         self.db.commit()
         self.db.refresh(cont)
         return cont
+    
+    
+    def delete(self, id_contenido: int, hard_delete: bool = True):
+        """
+        Elimina contenido (soft o hard delete)
+        
+        Args:
+            hard_delete: Si True, elimina físicamente. Si False, solo archiva.
+        """
+        try:
+            cont = self.get_by_id(id_contenido)
+            
+            if hard_delete:
+                # Eliminación física
+                self.db.delete(cont)
+            else:
+                # Soft delete
+                cont.estado = "archivado"
+            
+            self.db.commit()
+            return True
+        except Exception as e:
+            self.db.rollback()
+            raise DatabaseException(str(e))

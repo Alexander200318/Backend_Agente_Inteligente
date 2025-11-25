@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from database.database import get_db
 from services.unidad_contenido_service import UnidadContenidoService
 from schemas.unidad_contenido_schemas import UnidadContenidoResponse, UnidadContenidoCreate,UnidadContenidoUpdate
-
+from exceptions.base import NotFoundException
 from datetime import date
 
 router = APIRouter(prefix="/contenidos", tags=["Contenidos"])
@@ -24,3 +24,22 @@ def actualizar_contenido(id_contenido: int, data: UnidadContenidoUpdate, db: Ses
 @router.post("/{id_contenido}/publicar", response_model=UnidadContenidoResponse)
 def publicar_contenido(id_contenido: int, db: Session = Depends(get_db)):
     return UnidadContenidoService(db).publicar_contenido(id_contenido, publicado_por=1)
+
+
+@router.delete("/{id_contenido}")
+def eliminar_contenido(
+    id_contenido: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Elimina un contenido de la BD y ChromaDB
+    """
+    service = UnidadContenidoService(db)
+    
+    try:
+        resultado = service.eliminar_contenido(id_contenido)
+        return resultado
+    except NotFoundException as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
