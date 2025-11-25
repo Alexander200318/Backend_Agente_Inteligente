@@ -148,7 +148,8 @@ from routers import (
     agentes_router,
     embeddings_router,
     persona_router,
-    widget_router  # 🔥 Router del widget
+    widget_router,
+    usuario_rol_router  # 🔥 Router del widget
 )
 
 # Incluir routers de API con prefix /api/v1
@@ -169,6 +170,7 @@ app.include_router(chat_auto_router.router, prefix="/api/v1", tags=["Chat Auto"]
 app.include_router(agentes_router.router, prefix="/api/v1", tags=["Gestión Agentes"])
 app.include_router(embeddings_router.router, prefix="/api/v1", tags=["Embeddings"])
 app.include_router(persona_router.router, prefix="/api/v1", tags=["Personas"])
+app.include_router(usuario_rol_router.router, prefix="/api/v1", tags=["Rol-Usuario"])
 
 # Incluir router del widget SIN prefix (acceso directo a /widget y /admin)
 app.include_router(widget_router.router, tags=["Widget"])
