@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CallCenterAI - Panel de Administración</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 CallCenterAI - Panel de Administración</h1>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="dashboard">Dashboard</button>
+            <button class="tab" data-tab="contenido">Base de Conocimiento</button>
+            <button class="tab" data-tab="conversaciones">Conversaciones</button>
+            <button class="tab" data-tab="configuracion">Configuración</button>
+        </div>
+
+        <!-- Tab: Dashboard -->
+        <div class="tab-content active" id="dashboard">
+            <div class="stats">
+                <div class="stat-card">
+                    <h3 id="total-conversaciones">0</h3>
+                    <p>Conversaciones totales</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="total-mensajes">0</h3>
+                    <p>Mensajes procesados</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="total-contenido">0</h3>
+                    <p>Unidades de contenido</p>
+                </div>
+                <div class="stat-card">
+                    <h3>99.9%</h3>
+                    <p>Tiempo de actividad</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Actividad reciente</h2>
+                <p style="color: #666; margin-top: 10px;">Las últimas conversaciones aparecerán aquí...</p>
+            </div>
+        </div>
+
+        <!-- Tab: Base de Conocimiento -->
+        <div class="tab-content" id="contenido">
+            <div class="card">
+                <h2>Crear nueva unidad de contenido</h2>
+                <div id="mensaje-contenido"></div>
+                <form id="form-contenido">
+                    <div class="form-group">
+                        <label>Título</label>
+                        <input type="text" name="titulo" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Categoría</label>
+                        <select name="categoria">
+                            <option value="Admisión">Admisión</option>
+                            <option value="Carreras">Carreras</option>
+                            <option value="Servicios">Servicios</option>
+                            <option value="Horarios">Horarios</option>
+                            <option value="General">General</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Contenido</label>
+                        <textarea name="contenido" required placeholder="Escribe aquí la información que el bot usará para responder..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Palabras clave (separadas por comas)</label>
+                        <input type="text" name="palabras_clave" placeholder="admision, inscripción, requisitos">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Guardar contenido</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h2>Contenido existente</h2>
+                <table id="tabla-contenido">
+                    <thead>
+                        <tr>
+                            <th>Título</th>
+                            <th>Categoría</th>
+                            <th>Palabras clave</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: Conversaciones -->
+        <div class="tab-content" id="conversaciones">
+            <div class="card">
+                <h2>Historial de conversaciones</h2>
+                <table id="tabla-conversaciones">
+                    <thead>
+                        <tr>
+                            <th>ID Sesión</th>
+                            <th>Fecha</th>
+                            <th>Total mensajes</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: Configuración -->
+        <div class="tab-content" id="configuracion">
+            <div class="card">
+                <h2>Configuración del sistema</h2>
+                <div class="form-group">
+                    <label>Nombre del Bot</label>
+                    <input type="text" value="TecAI" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Mensaje de bienvenida</label>
+                    <textarea readonly>¡Hola! Soy el asistente virtual de TEC AZUAY. ¿En qué puedo ayudarte hoy?</textarea>
+                </div>
+                <div class="form-group">
+                    <label>Modelo de IA</label>
+                    <input type="text" value="Ollama - Llama 3" readonly>
+                </div>
+                <p style="color: #666; margin-top: 20px;">
+                    Para modificar la configuración, edita el archivo <code>.env</code>
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>Código de integración para WordPress</h2>
+                <p style="margin-bottom: 15px;">Copia y pega este código en tu tema de WordPress (footer.php antes del cierre de &lt;/body&gt;):</p>
+                <textarea readonly style="font-family: monospace; font-size: 12px;">
+&lt;!-- ChatBot Widget --&gt;
+&lt;link rel="stylesheet" href="http://localhost:8000/static/css/widget.css"&gt;
+&lt;script src="http://localhost:8000/static/js/widget.js"&gt;&lt;/script&gt;</textarea>
+                <p style="margin-top: 15px; color: #666;">
+                    <strong>Nota:</strong> Cambia <code>localhost:8000</code> por tu dominio en producción.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>

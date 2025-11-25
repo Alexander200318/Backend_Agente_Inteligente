@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TecAI - ChatBot</title>
+    <link rel="stylesheet" href="/static/css/widget.css">
+</head>
+<body>
+    <!-- Botón flotante -->
+    <div id="chat-button">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12c0 1.54.36 3 .97 4.29L2 22l5.71-.97C9 21.64 10.46 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm0 18c-1.38 0-2.68-.29-3.85-.81l-.27-.13-2.82.48.48-2.82-.13-.27C4.88 14.68 4.59 13.38 4.59 12c0-4.42 3.59-8 8-8s8 3.58 8 8-3.58 8-8 8z"/>
+        </svg>
+    </div>
+
+    <!-- Contenedor del chat -->
+    <div id="chat-container">
+        <!-- Header -->
+        <div id="chat-header">
+            <div id="chat-header-info">
+                <div id="bot-avatar">🤖</div>
+                <div>
+                    <h3>TecAI</h3>
+                    <div id="chat-status">En línea</div>
+                </div>
+            </div>
+            <button id="close-chat">×</button>
+        </div>
+
+        <!-- Mensajes -->
+        <div id="chat-messages"></div>
+
+        <!-- Indicador de escritura -->
+        <div class="typing-indicator" id="typing-indicator">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+
+        <!-- Acciones rápidas -->
+        <div id="quick-actions">
+            <button class="quick-action" data-msg="¿Qué carreras ofrecen?">Carreras</button>
+            <button class="quick-action" data-msg="Información de admisión">Admisión</button>
+            <button class="quick-action" data-msg="Horarios de atención">Horarios</button>
+        </div>
+
+        <!-- Input -->
+        <div id="chat-input-area">
+            <input type="text" id="chat-input" placeholder="Escribe tu mensaje...">
+            <button id="send-button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script src="/static/js/widget.js"></script>
+</body>
+</html>

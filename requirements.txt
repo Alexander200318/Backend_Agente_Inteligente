@@ -1,33 +1,63 @@
-# FastAPI y servidor
+# ============================================
+#   CallCenterAI - Requirements
+# ============================================
+
+# ============
+#   FastAPI y Servidor
+# ============
 fastapi
 uvicorn
 python-multipart==0.0.6
 
-# Base de datos
+# ============
+#   Base de Datos
+# ============
 SQLAlchemy
 pymysql
 cryptography==42.0.0
 
-# Validación y configuración
+# ============
+#   Validación y Configuración
+# ============
 pydantic
 pydantic-settings
 python-dotenv
 
-# Seguridad y autenticación
+# ============
+#   Seguridad y Autenticación
+# ============
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.2
 
-# Utilidades
+# ============
+#   Utilidades
+# ============
 email-validator==2.1.0
-
-# Integración con Ollama
 requests
+
+# ============
+#   HTTP Cliente (compatible con ollama y chromadb)
+# ============
+httpx==0.25.2
+
+# ============
+#   Integración con Ollama
+# ============
 ollama
+
+# ============
+#   Templates (para widget y admin)
+# ============
+jinja2
+aiofiles
 
 # ============
 #   RAG / IA
 # ============
+
+# NumPy - CRÍTICO: Debe ser < 2.0 para ChromaDB
+numpy<2.0
 
 # Vector Store
 chromadb
@@ -35,15 +65,14 @@ chromadb
 # Embeddings locales (recomendado)
 sentence-transformers
 
-# Si quieres modelos más pesados (opcional)
+# Modelos de IA (opcional)
 transformers
 torch
 
-# Archivos / markdown (opcional pero útil para RAG)
+# Procesamiento de texto
 markdown
 
-# Cache
+# ============
+#   Cache
+# ============
 redis==5.0.0
-
-
-

@@ -1,47 +1,121 @@
+import os
+from typing import List, Optional
 from pydantic_settings import BaseSettings
-from typing import Optional
+from dotenv import load_dotenv
+
+# Cargar variables de entorno
+load_dotenv()
 
 class Settings(BaseSettings):
-    """Configuración de la aplicación"""
+    """Configuración centralizada de la aplicación"""
     
-    # Aplicación
+    # ============================================
+    #   APLICACIÓN
+    # ============================================
     APP_NAME: str = "CallCenterAI - Chatbot Institucional"
     APP_VERSION: str = "3.0.0"
     DEBUG: bool = True
     
-    # Base de datos MySQL
+    # ============================================
+    #   BASE DE DATOS MYSQL
+    # ============================================
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "root"
     DB_PASSWORD: str = ""
     DB_NAME: str = "chatbot_institucional"
     
-    # JWT y Seguridad
-    SECRET_KEY: str = "your-secret-key-change-in-production"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
-    # CORS
-    CORS_ORIGINS: list = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:8000",
-        "http://localhost:8081",      # ✅ Agrega este (Expo Web)
-        "http://127.0.0.1:8081",      # ✅ Agrega este también
-        "http://192.168.5.6:8081",    # ✅ Para dispositivos móviles en la misma red
-    ]
-    
-    # Otros
-    MAX_LOGIN_ATTEMPTS: int = 5
-    PASSWORD_MIN_LENGTH: int = 8
-    
     @property
     def DATABASE_URL(self) -> str:
         """Genera la URL de conexión a MySQL"""
         return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
     
+    # ============================================
+    #   JWT Y SEGURIDAD
+    # ============================================
+    SECRET_KEY: str = "your-super-secret-key-change-this-in-production-min-32-chars"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    
+    # Configuración de seguridad
+    MAX_LOGIN_ATTEMPTS: int = 5
+    PASSWORD_MIN_LENGTH: int = 8
+    
+    # ============================================
+    #   CORS
+    # ============================================
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://192.168.5.6:8081",
+        "*"  # Quita esto en producción
+    ]
+    
+    # ============================================
+    #   OLLAMA (IA LOCAL)
+    # ============================================
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL_BASE: str = "llama3"
+    OLLAMA_MODEL: str = "llama3:8b" 
+    
+    @property
+    def OLLAMA_URL(self) -> str:
+        """Alias para compatibilidad"""
+        return self.OLLAMA_BASE_URL
+    
+    # ============================================
+    #   REDIS (CACHE)
+    # ============================================
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str = ""
+    REDIS_DB: int = 0
+    
+    @property
+    def REDIS_URL(self) -> str:
+        """Genera la URL de conexión a Redis"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+    
+    # ============================================
+    #   CHROMADB (VECTOR STORE)
+    # ============================================
+    CHROMA_PERSIST_DIR: str = "./chroma_db"
+    CHROMA_COLLECTION_NAME: str = "knowledge_base"
+    
+    # ============================================
+    #   EMBEDDINGS
+    # ============================================
+    EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    
+    # ============================================
+    #   CHATBOT
+    # ============================================
+    BOT_NAME: str = "TecAI"
+    BOT_WELCOME_MESSAGE: str = "¡Hola! Soy el asistente virtual de TEC AZUAY. ¿En qué puedo ayudarte hoy?"
+    DEFAULT_AGENT_ID: int = 1
+    
+    # ============================================
+    #   LÍMITES Y TIMEOUTS
+    # ============================================
+    MAX_TOKENS: int = 2000
+    TIMEOUT_SECONDS: int = 30
+    
+    # ============================================
+    #   TEMPLATES Y ARCHIVOS ESTÁTICOS
+    # ============================================
+    TEMPLATES_DIR: str = "templates"
+    STATIC_DIR: str = "static"
+    
     class Config:
+        """Configuración de Pydantic"""
         env_file = ".env"
+        env_file_encoding = "utf-8"
         case_sensitive = True
 
+# Instancia única de configuración
 settings = Settings()
