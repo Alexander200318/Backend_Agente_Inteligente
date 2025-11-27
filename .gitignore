@@ -5,6 +5,7 @@ venv/
 .env
 .env.*
 *.env
+*.env.example
 
 # ─────────────────────────────────────────
 #  CHROMADB (Evitar subir colecciones)

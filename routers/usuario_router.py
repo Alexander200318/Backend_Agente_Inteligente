@@ -1,24 +1,39 @@
 # routers/usuario_router.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import Optional
-from pydantic import BaseModel, EmailStr
-from passlib.context import CryptContext
+from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime, timedelta
-from jose import jwt
+
 
 from database.database import get_db
 from models.usuario import Usuario
 from repositories.usuario_repo import UsuarioRepository
 from exceptions.base import NotFoundException, BadRequestException
 
-# ========== CONFIGURACIÓN DE SEGURIDAD ==========
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Importar funciones de seguridad desde core
+from core.config import settings
+from core.security import (
+    verify_password,
+    get_password_hash,
+    validate_password_strength,
+    create_access_token,
+    sanitize_input,
+    validate_username,
+    validate_email,
+    log_security_event,
+    should_lockout_user,
+    calculate_lockout_until,
+    is_user_locked_out,
+    get_client_ip,
+    mask_email
+)
 
-# ⚠️ MOVER ESTO A core/config.py EN PRODUCCIÓN
-SECRET_KEY = "tu-clave-secreta-super-segura-cambiala-en-produccion-12345"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
 
 # ========== ROUTER ==========
 router = APIRouter(
@@ -33,11 +48,27 @@ class LoginRequest(BaseModel):
     username: str
     password: str
     
+    @field_validator('username')
+    def validate_username_field(cls, v):
+        v = sanitize_input(v, max_length=50)
+        is_valid, msg = validate_username(v)
+        if not is_valid:
+            raise ValueError(msg)
+        return v
+    
+    @field_validator('password')
+    def validate_password_field(cls, v):
+        if not v or len(v.strip()) < 4:
+            raise ValueError("La contraseña es demasiado corta")
+        if len(v) > 100:
+            raise ValueError("La contraseña es demasiado larga")
+        return v.strip()
+    
     class Config:
         json_schema_extra = {
             "example": {
                 "username": "admin",
-                "password": "admin123"
+                "password": "Admin123!"
             }
         }
 
@@ -68,39 +99,82 @@ class UsuarioCreate(BaseModel):
     id_persona: int
     estado: Optional[str] = "activo"
     requiere_cambio_password: Optional[bool] = True
+    
+    @field_validator('username')
+    def validate_username_field(cls, v):
+        v = sanitize_input(v, max_length=50)
+        is_valid, msg = validate_username(v)
+        if not is_valid:
+            raise ValueError(msg)
+        return v
+    
+    @field_validator('email')
+    def validate_email_field(cls, v):
+        v = sanitize_input(v, max_length=100)
+        is_valid, msg = validate_email(v)
+        if not is_valid:
+            raise ValueError(msg)
+        return v.lower()
+    
+    @field_validator('password')
+    def validate_password_field(cls, v):
+        is_valid, msg = validate_password_strength(v)
+        if not is_valid:
+            raise ValueError(msg)
+        return v
 
 class UsuarioUpdate(BaseModel):
     """Schema para actualizar usuario"""
     email: Optional[EmailStr] = None
     estado: Optional[str] = None
+    
+    @field_validator('email')
+    def validate_email_field(cls, v):
+        if v:
+            v = sanitize_input(v, max_length=100)
+            is_valid, msg = validate_email(v)
+            if not is_valid:
+                raise ValueError(msg)
+            return v.lower()
+        return v
 
 class PasswordChange(BaseModel):
     """Schema para cambio de contraseña"""
     password_actual: str
     password_nuevo: str
+    
+    @field_validator('password_nuevo')
+    def validate_password_field(cls, v):
+        is_valid, msg = validate_password_strength(v)
+        if not is_valid:
+            raise ValueError(msg)
+        return v
 
 # ========== ENDPOINTS ==========
 
 @router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
 async def login(
     credentials: LoginRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    🔐 Endpoint de autenticación
+    🔐 Endpoint de autenticación con seguridad completa
     
-    - Valida credenciales de usuario
-    - Genera token JWT
-    - Registra intentos fallidos
-    - Bloquea usuario después de 5 intentos
+    **Seguridad implementada:**
+    - ✅ Validación y sanitización de inputs
+    - ✅ Rate limiting
+    - ✅ Control de intentos fallidos
+    - ✅ Bloqueo automático después de 5 intentos
+    - ✅ Bloqueo temporal de 15 minutos
+    - ✅ Logging de eventos de seguridad
+    - ✅ Tokens JWT seguros
     
     **Returns:**
     - `token`: Token JWT para autenticación
     - `usuario`: Datos del usuario autenticado
     """
-    print(f"📥 [LOGIN] Recibiendo login request")
-    print(f"📥 [LOGIN] Username: {credentials.username}")
-    print(f"📥 [LOGIN] Password length: {len(credentials.password)}")
+    client_ip = get_client_ip(request)
     
     try:
         # 1. Buscar usuario
@@ -109,88 +183,146 @@ async def login(
         ).first()
         
         if not usuario:
-            print(f"❌ [LOGIN] Usuario no encontrado: {credentials.username}")
+            log_security_event(
+                "LOGIN_FAILED",
+                credentials.username,
+                "Usuario no encontrado",
+                success=False,
+                ip_address=client_ip
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario o contraseña incorrectos"
             )
         
-        print(f"✅ [LOGIN] Usuario encontrado: {usuario.username}")
-        print(f"📊 [LOGIN] Estado: {usuario.estado}")
-        print(f"📊 [LOGIN] Intentos fallidos: {usuario.intentos_fallidos}")
-        
-        # 2. Verificar estado del usuario
+        # 2. Verificar si el usuario está bloqueado temporalmente
         if usuario.estado == "bloqueado":
-            print(f"🔒 [LOGIN] Usuario bloqueado: {usuario.username}")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Usuario bloqueado. Contacta al administrador"
-            )
+            # Verificar si el bloqueo temporal ha expirado
+            if usuario.fecha_bloqueo and is_user_locked_out(usuario.fecha_bloqueo):
+                tiempo_restante = (
+                    usuario.fecha_bloqueo + 
+                    timedelta(minutes=settings.LOCKOUT_DURATION_MINUTES) - 
+                    datetime.now()
+                )
+                minutos_restantes = int(tiempo_restante.total_seconds() / 60)
+                
+                log_security_event(
+                    "LOGIN_BLOCKED",
+                    usuario.username,
+                    f"Usuario bloqueado temporalmente. {minutos_restantes} minutos restantes",
+                    success=False,
+                    ip_address=client_ip
+                )
+                
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Usuario bloqueado temporalmente. Intenta nuevamente en {minutos_restantes} minutos"
+                )
+            else:
+                # El bloqueo temporal expiró, desbloquear automáticamente
+                usuario.estado = "activo"
+                usuario.intentos_fallidos = 0
+                usuario.fecha_bloqueo = None
+                db.commit()
+                log_security_event(
+                    "AUTO_UNLOCK",
+                    usuario.username,
+                    "Desbloqueo automático por expiración de tiempo",
+                    success=True,
+                    ip_address=client_ip
+                )
         
+        # 3. Verificar otros estados
         if usuario.estado == "inactivo":
-            print(f"⏸️ [LOGIN] Usuario inactivo: {usuario.username}")
+            log_security_event(
+                "LOGIN_INACTIVE",
+                usuario.username,
+                "Intento de login con usuario inactivo",
+                success=False,
+                ip_address=client_ip
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Usuario inactivo. Contacta al administrador"
             )
         
         if usuario.estado == "suspendido":
-            print(f"⏸️ [LOGIN] Usuario suspendido: {usuario.username}")
+            log_security_event(
+                "LOGIN_SUSPENDED",
+                usuario.username,
+                "Intento de login con usuario suspendido",
+                success=False,
+                ip_address=client_ip
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Usuario suspendido. Contacta al administrador"
             )
         
-        # 3. Verificar contraseña
-        if not pwd_context.verify(credentials.password, usuario.password):
-            print(f"❌ [LOGIN] Contraseña incorrecta para: {usuario.username}")
-            
+        # 4. Verificar contraseña
+        if not verify_password(credentials.password, usuario.password):
             # Registrar intento fallido
             usuario.intentos_fallidos += 1
             usuario.fecha_ultimo_intento_fallido = datetime.now()
             
-            print(f"⚠️ [LOGIN] Intento fallido #{usuario.intentos_fallidos}")
+            log_security_event(
+                "LOGIN_FAILED",
+                usuario.username,
+                f"Contraseña incorrecta. Intento #{usuario.intentos_fallidos}",
+                success=False,
+                ip_address=client_ip
+            )
             
-            # Bloquear si supera 5 intentos
-            if usuario.intentos_fallidos >= 5:
+            # Verificar si debe ser bloqueado
+            if should_lockout_user(usuario.intentos_fallidos):
                 usuario.estado = "bloqueado"
                 usuario.fecha_bloqueo = datetime.now()
                 db.commit()
-                print(f"🔒 [LOGIN] Usuario bloqueado por intentos fallidos: {usuario.username}")
+                
+                log_security_event(
+                    "USER_LOCKED",
+                    usuario.username,
+                    f"Usuario bloqueado por {settings.MAX_LOGIN_ATTEMPTS} intentos fallidos",
+                    success=False,
+                    ip_address=client_ip
+                )
+                
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Usuario bloqueado por múltiples intentos fallidos. Contacta al administrador"
+                    detail=f"Usuario bloqueado por múltiples intentos fallidos. Intenta nuevamente en {settings.LOCKOUT_DURATION_MINUTES} minutos"
                 )
             
             db.commit()
+            
+            intentos_restantes = settings.MAX_LOGIN_ATTEMPTS - usuario.intentos_fallidos
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Usuario o contraseña incorrectos"
+                detail=f"Usuario o contraseña incorrectos. Te quedan {intentos_restantes} intento{'s' if intentos_restantes != 1 else ''}"
             )
         
-        print(f"✅ [LOGIN] Contraseña correcta para: {usuario.username}")
-        
-        # 4. Login exitoso - resetear intentos
+        # 5. Login exitoso - resetear intentos
         usuario.intentos_fallidos = 0
         usuario.ultimo_acceso = datetime.now()
         usuario.fecha_ultimo_intento_fallido = None
         db.commit()
         
-        print(f"✅ [LOGIN] Intentos fallidos reseteados")
+        log_security_event(
+            "LOGIN_SUCCESS",
+            usuario.username,
+            "Login exitoso",
+            success=True,
+            ip_address=client_ip
+        )
         
-        # 5. Crear token JWT
+        # 6. Crear token JWT seguro
         token_data = {
             "sub": str(usuario.id_usuario),
             "username": usuario.username,
             "email": usuario.email,
-            "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         }
-        token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
+        token = create_access_token(token_data)
         
-        print(f"🎫 [LOGIN] Token JWT generado para: {usuario.username}")
-        print(f"✅ [LOGIN] Login exitoso completado")
-        
-        # 6. Respuesta
+        # 7. Respuesta
         return {
             "token": token,
             "usuario": {
@@ -206,9 +338,13 @@ async def login(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ [LOGIN] Error inesperado: {type(e).__name__}: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        log_security_event(
+            "LOGIN_ERROR",
+            credentials.username,
+            f"Error inesperado: {str(e)}",
+            success=False,
+            ip_address=client_ip
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"
@@ -218,19 +354,23 @@ async def login(
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def crear_usuario(
     usuario_data: UsuarioCreate,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    ➕ Crear nuevo usuario
+    ➕ Crear nuevo usuario con validaciones de seguridad
     
-    - Valida que username y email sean únicos
-    - Verifica que la persona exista
-    - Hashea la contraseña antes de guardar
+    **Seguridad:**
+    - ✅ Validación de fortaleza de contraseña
+    - ✅ Sanitización de inputs
+    - ✅ Validación de username y email únicos
+    - ✅ Hash seguro de contraseña
     """
     repo = UsuarioRepository(db)
+    client_ip = get_client_ip(request)
     
     try:
-        # Validaciones
+        # Validaciones de unicidad
         if repo.exists_by_username(usuario_data.username):
             raise BadRequestException(
                 f"El username '{usuario_data.username}' ya está en uso"
@@ -241,18 +381,27 @@ async def crear_usuario(
                 f"El email '{usuario_data.email}' ya está en uso"
             )
         
+        # Verificar que la persona exista
         persona = repo.get_persona_by_id(usuario_data.id_persona)
         if not persona:
             raise NotFoundException(
                 f"Persona con ID {usuario_data.id_persona} no encontrada"
             )
         
-        # Hash de la contraseña
-        hashed_password = pwd_context.hash(usuario_data.password)
+        # Hash seguro de la contraseña
+        hashed_password = get_password_hash(usuario_data.password)
         usuario_data.password = hashed_password
         
         # Crear usuario
         nuevo_usuario = repo.create(usuario_data, persona)
+        
+        log_security_event(
+            "USER_CREATED",
+            nuevo_usuario.username,
+            f"Nuevo usuario creado - Email: {mask_email(nuevo_usuario.email)}",
+            success=True,
+            ip_address=client_ip
+        )
         
         return {
             "message": "Usuario creado exitosamente",
@@ -283,6 +432,9 @@ async def listar_usuarios(
 ):
     """📋 Listar usuarios con paginación y filtros"""
     repo = UsuarioRepository(db)
+    
+    # Limitar resultados máximos por seguridad
+    limit = min(limit, 500)
     
     usuarios = repo.get_all(
         skip=skip,
@@ -378,13 +530,23 @@ async def obtener_usuario(
 async def actualizar_usuario(
     id_usuario: int,
     usuario_data: UsuarioUpdate,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """✏️ Actualizar usuario"""
     repo = UsuarioRepository(db)
+    client_ip = get_client_ip(request)
     
     try:
         usuario_actualizado = repo.update(id_usuario, usuario_data)
+        
+        log_security_event(
+            "USER_UPDATED",
+            usuario_actualizado.username,
+            "Usuario actualizado",
+            success=True,
+            ip_address=client_ip
+        )
         
         return {
             "message": "Usuario actualizado exitosamente",
@@ -402,13 +564,24 @@ async def actualizar_usuario(
 @router.delete("/{id_usuario}", status_code=status.HTTP_200_OK)
 async def eliminar_usuario(
     id_usuario: int,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """🗑️ Desactivar usuario (soft delete)"""
     repo = UsuarioRepository(db)
+    client_ip = get_client_ip(request)
     
     try:
         resultado = repo.delete(id_usuario)
+        
+        log_security_event(
+            "USER_DELETED",
+            f"ID:{id_usuario}",
+            "Usuario desactivado (soft delete)",
+            success=True,
+            ip_address=client_ip
+        )
+        
         return resultado
     except NotFoundException:
         raise
@@ -418,32 +591,53 @@ async def eliminar_usuario(
 async def cambiar_password(
     id_usuario: int,
     password_data: PasswordChange,
+    request: Request,
     db: Session = Depends(get_db)
 ):
-    """🔑 Cambiar contraseña de usuario"""
+    """🔑 Cambiar contraseña con validaciones de seguridad"""
     repo = UsuarioRepository(db)
+    client_ip = get_client_ip(request)
     
     try:
         usuario = repo.get_by_id(id_usuario)
         
         # Verificar contraseña actual
-        if not pwd_context.verify(password_data.password_actual, usuario.password):
+        if not verify_password(password_data.password_actual, usuario.password):
+            log_security_event(
+                "PASSWORD_CHANGE_FAILED",
+                usuario.username,
+                "Contraseña actual incorrecta",
+                success=False,
+                ip_address=client_ip
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Contraseña actual incorrecta"
             )
         
         # Validar que la nueva contraseña sea diferente
-        if password_data.password_actual == password_data.password_nuevo:
+        if verify_password(password_data.password_nuevo, usuario.password):
             raise BadRequestException(
                 "La nueva contraseña debe ser diferente a la actual"
             )
         
         # Hash de nueva contraseña
-        nueva_password_hash = pwd_context.hash(password_data.password_nuevo)
+        nueva_password_hash = get_password_hash(password_data.password_nuevo)
         
         # Actualizar
         repo.update_password(id_usuario, nueva_password_hash)
+        
+        # Marcar que ya no requiere cambio de contraseña
+        usuario.requiere_cambio_password = False
+        db.commit()
+        
+        log_security_event(
+            "PASSWORD_CHANGED",
+            usuario.username,
+            "Contraseña cambiada exitosamente",
+            success=True,
+            ip_address=client_ip
+        )
         
         return {
             "message": "Contraseña actualizada exitosamente",
@@ -463,10 +657,12 @@ async def cambiar_password(
 @router.post("/{id_usuario}/desbloquear", status_code=status.HTTP_200_OK)
 async def desbloquear_usuario(
     id_usuario: int,
+    request: Request,
     db: Session = Depends(get_db)
 ):
-    """🔓 Desbloquear usuario"""
+    """🔓 Desbloquear usuario manualmente"""
     repo = UsuarioRepository(db)
+    client_ip = get_client_ip(request)
     
     try:
         usuario = repo.get_by_id(id_usuario)
@@ -481,6 +677,14 @@ async def desbloquear_usuario(
         usuario.fecha_bloqueo = None
         usuario.fecha_ultimo_intento_fallido = None
         db.commit()
+        
+        log_security_event(
+            "USER_UNLOCKED",
+            usuario.username,
+            "Usuario desbloqueado manualmente",
+            success=True,
+            ip_address=client_ip
+        )
         
         return {
             "message": f"Usuario '{usuario.username}' desbloqueado exitosamente",
