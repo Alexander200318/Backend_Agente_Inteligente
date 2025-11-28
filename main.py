@@ -2,10 +2,15 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-from fastapi.staticfiles import StaticFiles  # 🔥 AGREGAR ESTA IMPORTACIÓN
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+
+# 🔥 IMPORTAR SLOWAPI PARA RATE LIMITING
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # 🔥 Cargar variables de entorno ANTES de importar settings
 load_dotenv()
@@ -26,6 +31,7 @@ async def lifespan(app: FastAPI):
     print(f"🔧 Modo DEBUG: {settings.DEBUG}")
     print(f"💾 Base de datos: {settings.DB_NAME}")
     print(f"🤖 Modelo Ollama: {settings.OLLAMA_MODEL}")
+    print(f"🔒 Rate Limiting: {settings.RATE_LIMIT_PER_MINUTE}/min (Login: {settings.RATE_LIMIT_LOGIN_PER_MINUTE}/min)")
     print("=" * 60)
     
     # Inicializar base de datos
@@ -35,6 +41,11 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print("👋 Cerrando aplicación...")
+
+# ==================== RATE LIMITING ====================
+
+# 🔥 Configurar rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # ==================== CREAR APLICACIÓN ====================
 
@@ -47,6 +58,10 @@ app = FastAPI(
     redoc_url="/redoc",
     debug=settings.DEBUG
 )
+
+# 🔥 Agregar rate limiter a la app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ==================== ARCHIVOS ESTÁTICOS ====================
 
@@ -70,6 +85,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 🔥 Middleware de seguridad - Headers HTTP seguros
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Agregar headers de seguridad a todas las respuestas"""
+    response = await call_next(request)
+    
+    # Headers de seguridad
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    
+    return response
 
 # ==================== EXCEPTION HANDLERS ====================
 
@@ -151,7 +182,7 @@ from routers import (
     embeddings_router,
     persona_router,
     widget_router,
-    usuario_rol_router  # 🔥 Router del widget
+    usuario_rol_router
 )
 
 # Incluir routers de API con prefix /api/v1
@@ -180,7 +211,8 @@ app.include_router(widget_router.router, tags=["Widget"])
 # ==================== HEALTH CHECK ====================
 
 @app.get("/", tags=["Health"])
-def root():
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+def root(request: Request):
     """Endpoint raíz con información del sistema"""
     return {
         "message": f"Bienvenido a {settings.APP_NAME}",
@@ -195,7 +227,8 @@ def root():
     }
 
 @app.get("/health", tags=["Health"])
-def health_check():
+@limiter.limit(f"{settings.RATE_LIMIT_PER_MINUTE}/minute")
+def health_check(request: Request):
     """Verificar estado de la aplicación"""
     return {
         "status": "healthy",
@@ -209,7 +242,8 @@ def health_check():
     }
 
 @app.get("/config", tags=["Health"])
-def get_config():
+@limiter.limit("10/minute")  # Límite más restrictivo para endpoint sensible
+def get_config(request: Request):
     """Obtener configuración actual (solo disponible en modo DEBUG)"""
     if not settings.DEBUG:
         return JSONResponse(

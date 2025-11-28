@@ -2,6 +2,7 @@ import os
 from typing import List, Optional
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
+import secrets
 
 # Cargar variables de entorno
 load_dotenv()
@@ -33,13 +34,30 @@ class Settings(BaseSettings):
     # ============================================
     #   JWT Y SEGURIDAD
     # ============================================
-    SECRET_KEY: str = "your-super-secret-key-change-this-in-production-min-32-chars"
+    SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(64))
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
-    # Configuración de seguridad
+    # ============================================
+    #   SEGURIDAD DE LOGIN
+    # ============================================
     MAX_LOGIN_ATTEMPTS: int = 5
+    LOCKOUT_DURATION_MINUTES: int = 15
+    
+    # ============================================
+    #   POLÍTICA DE CONTRASEÑAS
+    # ============================================
     PASSWORD_MIN_LENGTH: int = 8
+    PASSWORD_REQUIRE_UPPERCASE: bool = True
+    PASSWORD_REQUIRE_LOWERCASE: bool = True
+    PASSWORD_REQUIRE_DIGIT: bool = True
+    PASSWORD_REQUIRE_SPECIAL_CHAR: bool = True
+    
+    # ============================================
+    #   RATE LIMITING
+    # ============================================
+    RATE_LIMIT_PER_MINUTE: int = 60
+    RATE_LIMIT_LOGIN_PER_MINUTE: int = 5
     
     # ============================================
     #   CORS
