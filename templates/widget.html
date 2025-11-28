@@ -22,10 +22,43 @@
                 <div id="bot-avatar">🤖</div>
                 <div>
                     <h3>TecAI</h3>
-                    <div id="chat-status">En línea</div>
+                    <div id="chat-status">
+                        <span>En línea</span>
+                        <button id="toggle-agents-btn">
+                            Agentes
+                            <svg viewBox="0 0 24 24">
+                                <path d="M7 10l5 5 5-5z"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
-            <button id="close-chat">×</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="voice-toggle-btn" title="Activar/Desactivar voz">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                    </svg>
+                </button>
+                <button id="close-chat">×</button>
+            </div>
+        </div>
+
+        <!-- Selector de agente moderno -->
+        <div id="agent-selector">
+            <label>🎯 Selecciona un agente</label>
+            <div class="agent-cards" id="agent-cards"></div>
+        </div>
+
+        <!-- Información del agente seleccionado -->
+        <div id="selected-agent-info">
+            <div class="agent-badge">
+                <div class="agent-icon">🎯</div>
+                <div>
+                    <div class="agent-name" id="agent-display-name">Agente</div>
+                    <div class="agent-mode">Modo específico</div>
+                </div>
+            </div>
+            <button id="clear-agent-btn">✕ Cambiar</button>
         </div>
 
         <!-- Mensajes -->
@@ -36,13 +69,6 @@
             <span></span>
             <span></span>
             <span></span>
-        </div>
-
-        <!-- Acciones rápidas -->
-        <div id="quick-actions">
-            <button class="quick-action" data-msg="¿Qué carreras ofrecen?">Carreras</button>
-            <button class="quick-action" data-msg="Información de admisión">Admisión</button>
-            <button class="quick-action" data-msg="Horarios de atención">Horarios</button>
         </div>
 
         <!-- Input -->

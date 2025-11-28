@@ -63,8 +63,10 @@ except Exception as e:
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    # allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
+    allow_origins=["*"],
+    
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -153,24 +155,24 @@ from routers import (
 )
 
 # Incluir routers de API con prefix /api/v1
-app.include_router(usuario_router.router, prefix="/api/v1", tags=["Usuarios"])
-app.include_router(departamento_router.router, prefix="/api/v1", tags=["Departamentos"])
+app.include_router(usuario_router.router, prefix="/api/v1")
+app.include_router(departamento_router.router, prefix="/api/v1")
 app.include_router(rol_router.router, prefix="/api/v1", tags=["Roles"])
-app.include_router(usuario_agente_router.router, prefix="/api/v1", tags=["Usuario-Agente"])
-app.include_router(departamento_agente_router.router, prefix="/api/v1", tags=["Departamento-Agente"])
+app.include_router(usuario_agente_router.router, prefix="/api/v1")
+app.include_router(departamento_agente_router.router, prefix="/api/v1")
 app.include_router(categoria_router.router, prefix="/api/v1", tags=["Categorías"])
-app.include_router(unidad_contenido_router.router, prefix="/api/v1", tags=["Contenido"])
-app.include_router(metrica_diaria_agente_router.router, prefix="/api/v1", tags=["Métricas Agente"])
-app.include_router(metrica_contenido_router.router, prefix="/api/v1", tags=["Métricas Contenido"])
-app.include_router(agente_virtual_router.router, prefix="/api/v1", tags=["Agentes Virtuales"])
-app.include_router(visitante_anonimo_router.router, prefix="/api/v1", tags=["Visitantes"])
-app.include_router(conversacion_sync_router.router, prefix="/api/v1", tags=["Conversaciones"])
-app.include_router(chat_router.router, prefix="/api/v1", tags=["Chat"])
-app.include_router(chat_auto_router.router, prefix="/api/v1", tags=["Chat Auto"])
-app.include_router(agentes_router.router, prefix="/api/v1", tags=["Gestión Agentes"])
-app.include_router(embeddings_router.router, prefix="/api/v1", tags=["Embeddings"])
-app.include_router(persona_router.router, prefix="/api/v1", tags=["Personas"])
-app.include_router(usuario_rol_router.router, prefix="/api/v1", tags=["Rol-Usuario"])
+app.include_router(unidad_contenido_router.router, prefix="/api/v1")
+app.include_router(metrica_diaria_agente_router.router, prefix="/api/v1")
+app.include_router(metrica_contenido_router.router, prefix="/api/v1")
+app.include_router(agente_virtual_router.router, prefix="/api/v1")
+app.include_router(visitante_anonimo_router.router, prefix="/api/v1")
+app.include_router(conversacion_sync_router.router, prefix="/api/v1")
+app.include_router(chat_router.router, prefix="/api/v1")
+app.include_router(chat_auto_router.router, prefix="/api/v1")
+app.include_router(agentes_router.router, prefix="/api/v1")
+app.include_router(embeddings_router.router, prefix="/api/v1")
+app.include_router(persona_router.router, prefix="/api/v1")
+app.include_router(usuario_rol_router.router, prefix="/api/v1")
 
 # Incluir router del widget SIN prefix (acceso directo a /widget y /admin)
 app.include_router(widget_router.router, tags=["Widget"])

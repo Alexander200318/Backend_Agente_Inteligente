@@ -18,6 +18,13 @@ class AgentClassifier:
         # crear colección si falta
         self.collection = self.chroma.get_or_create_collection(self.index_name)
 
+        try:
+            if self.collection.count() == 0:
+                print("⚠️  agents_index vacío, construyendo índice de agentes...")
+                self.build_index()
+        except Exception as e:
+            print("Error verificando/creando índice de agentes:", e)
+
     def build_index(self):
         agentes = self.db.query(AgenteVirtual).filter(AgenteVirtual.activo==True).all()
         docs = []
@@ -40,10 +47,18 @@ class AgentClassifier:
         return {"ok": True, "total": len(docs)}
 
     def classify(self, pregunta: str, top_k: int = 1):
+        # Por si acaso, si está vacía, reconstruir
+        try:
+            if self.collection.count() == 0:
+                self.build_index()
+        except Exception as e:
+            print("Error al contar la colección:", e)
+
         q_emb = self.embedder.encode([pregunta]).tolist()[0]
         res = self.collection.query(query_embeddings=[q_emb], n_results=top_k)
-        ids = res.get("ids", [[]])[0]
         metas = res.get("metadatas", [[]])[0]
+
         if not metas:
             return None
+
         return metas[0]["id_agente"]
