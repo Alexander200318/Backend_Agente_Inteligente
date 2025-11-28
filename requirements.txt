@@ -29,7 +29,7 @@ python-dotenv
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.2
-slowapi  # Rate limiting para prevenir ataques de fuerza bruta
+slowapi  
 
 # ============
 #   Utilidades
@@ -74,111 +74,6 @@ torch
 markdown
 
 # ============
-#   Cache# ============================================
-#   CallCenterAI - Requirements
-# ============================================
-
-# ============
-#   FastAPI y Servidor
-# ============
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-python-multipart==0.0.6
-
-# ============
-#   Base de Datos
-# ============
-SQLAlchemy==2.0.25
-pymysql==1.1.0
-cryptography==42.0.0
-
-# MongoDB (para conversaciones)
-motor==3.3.2
-pymongo==4.6.1
-
-# ============
-#   Validación y Configuración
-# ============
-pydantic==2.5.3
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-
-# ============
-#   Seguridad y Autenticación
-# ============
-passlib[bcrypt]==1.7.4
-python-jose[cryptography]==3.3.0
-bcrypt==4.1.2
-slowapi==0.1.9  # Rate limiting para prevenir ataques de fuerza bruta
-
-# ============
-#   Utilidades
-# ============
-email-validator==2.1.0
-requests==2.31.0
-python-dateutil==2.8.2
-
-# ============
-#   HTTP Cliente (compatible con ollama y chromadb)
-# ============
-httpx==0.25.2
-aiohttp==3.9.1
-
-# ============
-#   Integración con Ollama
-# ============
-ollama==0.1.6
-
-# ============
-#   Templates (para widget y admin)
-# ============
-jinja2==3.1.3
-aiofiles==23.2.1
-
-# ============
-#   RAG / IA
-# ============
-
-# NumPy - CRÍTICO: Debe ser < 2.0 para ChromaDB
-numpy==1.26.4
-
-# Vector Store
-chromadb==0.4.22
-
-# Embeddings locales (recomendado)
-sentence-transformers==2.3.1
-
-# Modelos de IA (opcional - PESADOS, instalar solo si necesitas)
-# transformers==4.37.2
-# torch==2.2.0
-
-# Procesamiento de texto
-markdown==3.5.2
-
-# ============
 #   Cache
-# ============
-redis==5.0.0
-
-# ============
-#   CORS
-# ============
-fastapi-cors==0.0.6
-
-# ============
-#   Testing (Opcional - Comentar si no se usa)
-# ============
-# pytest==7.4.4
-# pytest-asyncio==0.23.3
-
-# ============
-#   Logging y Monitoring (Opcional)
-# ============
-# loguru==0.7.2
-
-# ============
-#   Producción (Opcional)
-# ============
-# gunicorn==21.2.0
 # ============
 redis==5.0.0

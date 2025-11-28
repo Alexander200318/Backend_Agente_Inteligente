@@ -5,7 +5,6 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime, timedelta
 
-
 from database.database import get_db
 from models.usuario import Usuario
 from repositories.usuario_repo import UsuarioRepository
@@ -33,7 +32,6 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 limiter = Limiter(key_func=get_remote_address)
-
 
 # ========== ROUTER ==========
 router = APIRouter(
@@ -152,6 +150,10 @@ class PasswordChange(BaseModel):
 
 # ========== ENDPOINTS ==========
 
+# routers/usuario_router.py - LOGIN CON ROLES COMPLETO
+# Este endpoint maneja TODOS los roles correctamente
+
+@limiter.limit(f"{settings.RATE_LIMIT_LOGIN_PER_MINUTE}/minute")
 @router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
 async def login(
     credentials: LoginRequest,
@@ -159,20 +161,12 @@ async def login(
     db: Session = Depends(get_db)
 ):
     """
-    🔐 Endpoint de autenticación con seguridad completa
+    🔐 LOGIN UNIVERSAL CON SISTEMA DE ROLES
     
-    **Seguridad implementada:**
-    - ✅ Validación y sanitización de inputs
-    - ✅ Rate limiting
-    - ✅ Control de intentos fallidos
-    - ✅ Bloqueo automático después de 5 intentos
-    - ✅ Bloqueo temporal de 15 minutos
-    - ✅ Logging de eventos de seguridad
-    - ✅ Tokens JWT seguros
-    
-    **Returns:**
-    - `token`: Token JWT para autenticación
-    - `usuario`: Datos del usuario autenticado
+    Funciona para:
+    - ✅ Super Administrador (id_rol = 1)
+    - ✅ Administrador (id_rol = 2)
+    - ✅ Funcionario (id_rol = 3)
     """
     client_ip = get_client_ip(request)
     
@@ -195,9 +189,12 @@ async def login(
                 detail="Usuario o contraseña incorrectos"
             )
         
-        # 2. Verificar si el usuario está bloqueado temporalmente
+        # ✅ CORRECCIÓN: Inicializar intentos_fallidos si es None
+        if usuario.intentos_fallidos is None:
+            usuario.intentos_fallidos = 0
+        
+        # 2. Verificar estado del usuario
         if usuario.estado == "bloqueado":
-            # Verificar si el bloqueo temporal ha expirado
             if usuario.fecha_bloqueo and is_user_locked_out(usuario.fecha_bloqueo):
                 tiempo_restante = (
                     usuario.fecha_bloqueo + 
@@ -206,123 +203,151 @@ async def login(
                 )
                 minutos_restantes = int(tiempo_restante.total_seconds() / 60)
                 
-                log_security_event(
-                    "LOGIN_BLOCKED",
-                    usuario.username,
-                    f"Usuario bloqueado temporalmente. {minutos_restantes} minutos restantes",
-                    success=False,
-                    ip_address=client_ip
-                )
-                
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Usuario bloqueado temporalmente. Intenta nuevamente en {minutos_restantes} minutos"
+                    detail=f"Usuario bloqueado. Intenta en {minutos_restantes} minutos"
                 )
             else:
-                # El bloqueo temporal expiró, desbloquear automáticamente
+                # Desbloqueo automático
                 usuario.estado = "activo"
                 usuario.intentos_fallidos = 0
                 usuario.fecha_bloqueo = None
                 db.commit()
-                log_security_event(
-                    "AUTO_UNLOCK",
-                    usuario.username,
-                    "Desbloqueo automático por expiración de tiempo",
-                    success=True,
-                    ip_address=client_ip
-                )
         
-        # 3. Verificar otros estados
-        if usuario.estado == "inactivo":
-            log_security_event(
-                "LOGIN_INACTIVE",
-                usuario.username,
-                "Intento de login con usuario inactivo",
-                success=False,
-                ip_address=client_ip
-            )
+        if usuario.estado in ["inactivo", "suspendido"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Usuario inactivo. Contacta al administrador"
+                detail=f"Usuario {usuario.estado}. Contacta al administrador"
             )
         
-        if usuario.estado == "suspendido":
-            log_security_event(
-                "LOGIN_SUSPENDED",
-                usuario.username,
-                "Intento de login con usuario suspendido",
-                success=False,
-                ip_address=client_ip
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Usuario suspendido. Contacta al administrador"
-            )
-        
-        # 4. Verificar contraseña
+        # 3. Verificar contraseña
         if not verify_password(credentials.password, usuario.password):
-            # Registrar intento fallido
             usuario.intentos_fallidos += 1
             usuario.fecha_ultimo_intento_fallido = datetime.now()
             
-            log_security_event(
-                "LOGIN_FAILED",
-                usuario.username,
-                f"Contraseña incorrecta. Intento #{usuario.intentos_fallidos}",
-                success=False,
-                ip_address=client_ip
-            )
-            
-            # Verificar si debe ser bloqueado
             if should_lockout_user(usuario.intentos_fallidos):
                 usuario.estado = "bloqueado"
                 usuario.fecha_bloqueo = datetime.now()
                 db.commit()
                 
-                log_security_event(
-                    "USER_LOCKED",
-                    usuario.username,
-                    f"Usuario bloqueado por {settings.MAX_LOGIN_ATTEMPTS} intentos fallidos",
-                    success=False,
-                    ip_address=client_ip
-                )
-                
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Usuario bloqueado por múltiples intentos fallidos. Intenta nuevamente en {settings.LOCKOUT_DURATION_MINUTES} minutos"
+                    detail=f"Usuario bloqueado por intentos fallidos"
                 )
             
             db.commit()
-            
             intentos_restantes = settings.MAX_LOGIN_ATTEMPTS - usuario.intentos_fallidos
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Usuario o contraseña incorrectos. Te quedan {intentos_restantes} intento{'s' if intentos_restantes != 1 else ''}"
+                detail=f"Credenciales incorrectas. {intentos_restantes} intentos restantes"
             )
         
-        # 5. Login exitoso - resetear intentos
+            # ========================================
+        # 🎭 SISTEMA DE ROLES - PARTE CRÍTICA
+        # ========================================
+
+        # 4. Obtener TODOS los roles del usuario
+        from models.usuario_rol import UsuarioRol
+        from models.rol import Rol
+
+        # ✅ CORRECCIÓN: Quitar el filtro de estado
+        roles_usuario = db.query(UsuarioRol).filter(
+            UsuarioRol.id_usuario == usuario.id_usuario,
+            UsuarioRol.activo == 1  # ✅ Filtrar por activo = 1
+        ).join(Rol).all()
+
+        if not roles_usuario or len(roles_usuario) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Usuario sin roles asignados. Contacta al administrador"
+            )
+
+        # 5. Determinar ROL PRINCIPAL (mayor jerarquía = nivel más bajo)
+        # Super Admin (nivel 1) > Admin (nivel 2) > Funcionario (nivel 3)
+        rol_principal = min(roles_usuario, key=lambda r: r.rol.nivel_jerarquia)
+
+        # 6. Construir información de roles
+        roles_info = []
+        for ur in roles_usuario:
+            roles_info.append({
+                "id_rol": ur.id_rol,
+                "nombre_rol": ur.rol.nombre_rol,
+                "nivel_jerarquia": ur.rol.nivel_jerarquia,
+                "descripcion": ur.rol.descripcion
+            })
+
+        # 7. Obtener TODOS los permisos del rol principal
+        permisos = {
+            # Permisos de gestión de usuarios
+            "puede_ver_usuarios": getattr(rol_principal.rol, 'puede_ver_usuarios', False),
+            "puede_crear_usuarios": getattr(rol_principal.rol, 'puede_crear_usuarios', False),
+            "puede_editar_usuarios": getattr(rol_principal.rol, 'puede_editar_usuarios', False),
+            "puede_eliminar_usuarios": getattr(rol_principal.rol, 'puede_eliminar_usuarios', False),
+            
+            # Permisos de gestión de roles
+            "puede_ver_roles": getattr(rol_principal.rol, 'puede_ver_roles', False),
+            "puede_crear_roles": getattr(rol_principal.rol, 'puede_crear_roles', False),
+            "puede_editar_roles": getattr(rol_principal.rol, 'puede_editar_roles', False),
+            "puede_eliminar_roles": getattr(rol_principal.rol, 'puede_eliminar_roles', False),
+            "puede_asignar_roles": getattr(rol_principal.rol, 'puede_asignar_roles', False),
+            
+            # Permisos de gestión de agentes
+            "puede_ver_agentes": getattr(rol_principal.rol, 'puede_ver_agentes', False),
+            "puede_crear_agentes": getattr(rol_principal.rol, 'puede_crear_agentes', False),
+            "puede_editar_agentes": getattr(rol_principal.rol, 'puede_editar_agentes', False),
+            "puede_eliminar_agentes": getattr(rol_principal.rol, 'puede_eliminar_agentes', False),
+            
+            # Permisos de conversaciones
+            "puede_ver_conversaciones": getattr(rol_principal.rol, 'puede_ver_conversaciones', False),
+            "puede_ver_todas_conversaciones": getattr(rol_principal.rol, 'puede_ver_todas_conversaciones', False),
+            "puede_exportar_conversaciones": getattr(rol_principal.rol, 'puede_exportar_conversaciones', False),
+            
+            # Permisos de departamentos
+            "puede_ver_departamentos": getattr(rol_principal.rol, 'puede_ver_departamentos', False),
+            "puede_crear_departamentos": getattr(rol_principal.rol, 'puede_crear_departamentos', False),
+            "puede_editar_departamentos": getattr(rol_principal.rol, 'puede_editar_departamentos', False),
+            "puede_eliminar_departamentos": getattr(rol_principal.rol, 'puede_eliminar_departamentos', False),
+            
+            # Permisos de contenido
+            "puede_ver_contenido": getattr(rol_principal.rol, 'puede_ver_contenido', False),
+            "puede_crear_contenido": getattr(rol_principal.rol, 'puede_crear_contenido', False),
+            "puede_editar_contenido": getattr(rol_principal.rol, 'puede_editar_contenido', False),
+            "puede_eliminar_contenido": getattr(rol_principal.rol, 'puede_eliminar_contenido', False),
+            
+            # Permisos de sistema
+            "puede_ver_logs": getattr(rol_principal.rol, 'puede_ver_logs', False),
+            "puede_configurar_sistema": getattr(rol_principal.rol, 'puede_configurar_sistema', False),
+            "puede_gestionar_api_keys": getattr(rol_principal.rol, 'puede_gestionar_api_keys', False),
+            "puede_exportar_datos": getattr(rol_principal.rol, 'puede_exportar_datos', False),
+            "puede_ver_estadisticas": getattr(rol_principal.rol, 'puede_ver_estadisticas', False)
+        }
+
+        # 8. Login exitoso - actualizar usuario
         usuario.intentos_fallidos = 0
         usuario.ultimo_acceso = datetime.now()
         usuario.fecha_ultimo_intento_fallido = None
         db.commit()
-        
+
         log_security_event(
             "LOGIN_SUCCESS",
             usuario.username,
-            "Login exitoso",
+            f"Login exitoso - Rol: {rol_principal.rol.nombre_rol}",
             success=True,
             ip_address=client_ip
         )
-        
-        # 6. Crear token JWT seguro
+
+        # 9. Crear token JWT con información del rol
         token_data = {
             "sub": str(usuario.id_usuario),
             "username": usuario.username,
             "email": usuario.email,
+            "id_rol": rol_principal.id_rol,
+            "nombre_rol": rol_principal.rol.nombre_rol,
+            "nivel_jerarquia": rol_principal.rol.nivel_jerarquia
         }
         token = create_access_token(token_data)
-        
-        # 7. Respuesta
+
+        # 10. Respuesta COMPLETA con roles y permisos
         return {
             "token": token,
             "usuario": {
@@ -331,7 +356,21 @@ async def login(
                 "email": usuario.email,
                 "estado": usuario.estado,
                 "requiere_cambio_password": usuario.requiere_cambio_password,
-                "ultimo_acceso": usuario.ultimo_acceso.isoformat() if usuario.ultimo_acceso else None
+                "ultimo_acceso": usuario.ultimo_acceso.isoformat() if usuario.ultimo_acceso else None,
+                
+                # 🎭 INFORMACIÓN DE ROLES
+                "rol_principal": {
+                    "id_rol": rol_principal.id_rol,
+                    "nombre_rol": rol_principal.rol.nombre_rol,
+                    "nivel_jerarquia": rol_principal.rol.nivel_jerarquia,
+                    "descripcion": rol_principal.rol.descripcion
+                },
+                
+                # Todos los roles del usuario
+                "roles": roles_info,
+                
+                # 🔑 PERMISOS COMPLETOS
+                "permisos": permisos
             }
         }
         
@@ -345,6 +384,9 @@ async def login(
             success=False,
             ip_address=client_ip
         )
+        print(f"❌ ERROR DETALLADO: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"
@@ -357,15 +399,7 @@ async def crear_usuario(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """
-    ➕ Crear nuevo usuario con validaciones de seguridad
-    
-    **Seguridad:**
-    - ✅ Validación de fortaleza de contraseña
-    - ✅ Sanitización de inputs
-    - ✅ Validación de username y email únicos
-    - ✅ Hash seguro de contraseña
-    """
+    """➕ Crear nuevo usuario con validaciones de seguridad"""
     repo = UsuarioRepository(db)
     client_ip = get_client_ip(request)
     

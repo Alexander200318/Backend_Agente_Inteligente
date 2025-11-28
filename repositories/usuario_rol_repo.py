@@ -87,7 +87,7 @@ class UsuarioRolRepository:
         query = self.db.query(UsuarioRol).filter(UsuarioRol.id_usuario == id_usuario)
         
         if solo_activos:
-            query = query.filter(UsuarioRol.activo == True)
+            query = query.filter(UsuarioRol.activo == 1)
         
         if include_relations:
             query = query.options(joinedload(UsuarioRol.rol))
@@ -104,7 +104,7 @@ class UsuarioRolRepository:
         query = self.db.query(UsuarioRol).filter(UsuarioRol.id_rol == id_rol)
         
         if solo_activos:
-            query = query.filter(UsuarioRol.activo == True)
+            query = query.filter(UsuarioRol.activo == 1)
         
         if include_relations:
             query = query.options(joinedload(UsuarioRol.usuario))
@@ -231,7 +231,7 @@ class UsuarioRolRepository:
         """Desactivar asignaciones expiradas (tarea programada)"""
         try:
             asignaciones_expiradas = self.db.query(UsuarioRol).filter(
-                UsuarioRol.activo == True,
+                UsuarioRol.activo == 1,
                 UsuarioRol.fecha_expiracion != None,
                 UsuarioRol.fecha_expiracion <= datetime.now()
             ).all()
@@ -278,7 +278,7 @@ class UsuarioRolRepository:
         )
         
         if solo_activos:
-            query = query.filter(UsuarioRol.activo == True)
+            query = query.filter(UsuarioRol.activo == 1)
         
         return query.first() is not None
     
