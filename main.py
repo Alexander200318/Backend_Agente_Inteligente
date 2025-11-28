@@ -290,3 +290,52 @@ if __name__ == "__main__":
         reload=settings.DEBUG,
         log_level="debug" if settings.DEBUG else "info"
     )
+    
+
+from core.security import get_password_hash, verify_password
+from database.database import get_db
+from sqlalchemy.orm import Session
+from fastapi import Depends
+
+@app.get("/dev/generate-hash/{password}")
+async def generate_hash_dev(password: str):
+    """🔧 DESARROLLO: Genera hash de contraseña"""
+    hashed = get_password_hash(password)
+    return {
+        "password": password,
+        "hash": hashed,
+        "sql": f"UPDATE usuario SET password = '{hashed}' WHERE username = 'superadmin';"
+    }
+
+@app.get("/dev/check-user/{username}")
+async def check_user_dev(username: str, db: Session = Depends(get_db)):
+    """🔧 DESARROLLO: Verifica usuario"""
+    from models.usuario import Usuario
+    from models.usuario_rol import UsuarioRol
+    from models.rol import Rol
+    
+    usuario = db.query(Usuario).filter(Usuario.username == username).first()
+    
+    if not usuario:
+        return {"error": f"Usuario '{username}' no encontrado"}
+    
+    roles = db.query(UsuarioRol).filter(
+        UsuarioRol.id_usuario == usuario.id_usuario
+    ).join(Rol).all()
+    
+    return {
+        "id_usuario": usuario.id_usuario,
+        "username": usuario.username,
+        "email": usuario.email,
+        "estado": usuario.estado,
+        "intentos_fallidos": usuario.intentos_fallidos,
+        "password_length": len(usuario.password),
+        "roles": [
+            {
+                "id_rol": r.id_rol,
+                "nombre_rol": r.rol.nombre_rol,
+                "nivel": r.rol.nivel_jerarquia
+            }
+            for r in roles
+        ]
+    }
