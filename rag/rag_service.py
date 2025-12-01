@@ -24,6 +24,10 @@ class RAGService:
         self.redis = None
         self._cache_ttl_seconds = 3600  # 1 hora
         
+        # 🔥 NUEVO: Cache de embeddings en memoria
+        self._embedding_cache = {}
+        self._max_cache_size = 1000  # Máximo 1000 embeddings en memoria
+        
         if self.use_cache:
             try:
                 self.redis = get_redis_client()
@@ -64,21 +68,40 @@ class RAGService:
         except Exception as e:
             print(f"⚠️  Error guardando en caché: {e}")
 
+    # 🔥 NUEVO: Cache de embeddings en memoria
+    def _get_cached_embedding(self, text: str):
+        """
+        Obtiene embedding del cache en memoria o lo genera
+        """
+        # Usar hash del texto como key
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        
+        if text_hash not in self._embedding_cache:
+            # Generar embedding
+            embedding = self.embedder.encode([text])[0].tolist()
+            
+            # Guardar en cache
+            self._embedding_cache[text_hash] = embedding
+            
+            # 🔥 Limitar tamaño del cache (FIFO simple)
+            if len(self._embedding_cache) > self._max_cache_size:
+                # Eliminar el primer elemento
+                first_key = next(iter(self._embedding_cache))
+                del self._embedding_cache[first_key]
+        
+        return self._embedding_cache[text_hash]
+
     def search(
         self, 
         id_agente: int, 
         query: str, 
-        n_results: int = 4,
-        use_reranking: bool = True,
-        use_priority_boost: bool = True,  # 🔥 NUEVO parámetro
-        priority_boost_factor: float = 0.1  # 🔥 Factor de boost
+        n_results: int = 3,  # 🔥 CAMBIO: Reducir de 3 a 2
+        use_reranking: bool = False,  # 🔥 CAMBIO: Desactivar por defecto
+        use_priority_boost: bool = True,
+        priority_boost_factor: float = 0.05
     ) -> List[Dict]:
         """
         Busca documentos relevantes con caché Redis y boost de prioridad
-        
-        Args:
-            use_priority_boost: Si True, aplica boost por prioridad
-            priority_boost_factor: Peso del boost (ej: 0.1 = +10% por cada punto de prioridad)
         """
         # Verificar caché primero
         cache_key = self._get_cache_key(id_agente, query, n_results, use_reranking)
@@ -92,7 +115,9 @@ class RAGService:
         
         # Búsqueda en ChromaDB
         collection = self.create_collection_if_missing(id_agente)
-        q_emb = self.embedder.encode([query]).tolist()[0]
+        
+        # 🔥 CAMBIO: Usar embedding cacheado
+        q_emb = self._get_cached_embedding(query)
         
         # Traer más candidatos si vamos a re-rankear
         initial_results = n_results * 3 if use_reranking else n_results
@@ -104,7 +129,7 @@ class RAGService:
         docs = res.get("documents", [[]])[0]
         metas = res.get("metadatas", [[]])[0]
         ids = res.get("ids", [[]])[0]
-        distances = res.get("distances", [[]])[0]  # 🔥 Obtener distancias
+        distances = res.get("distances", [[]])[0]
         
         if not docs:
             return []
@@ -120,18 +145,17 @@ class RAGService:
             if use_priority_boost:
                 boosted_scores = []
                 for i, score in enumerate(scores):
-                    prioridad = metas[i].get("prioridad", 5)  # Default 5 si no existe
+                    prioridad = metas[i].get("prioridad", 5)
                     boost = prioridad * priority_boost_factor
                     boosted_score = score + boost
                     boosted_scores.append(boosted_score)
                     
-                    # Debug
-                    if i < 3:  # Mostrar solo los primeros 3
+                    if i < 3:
                         print(f"  Doc {i+1}: score={score:.3f} + boost={boost:.3f} = {boosted_score:.3f} (prioridad={prioridad})")
                 
                 scores = boosted_scores
             
-            # Ordenar por score final (con boost incluido)
+            # Ordenar por score final
             ranked_indices = sorted(
                 range(len(scores)), 
                 key=lambda i: scores[i], 
@@ -147,7 +171,7 @@ class RAGService:
                     "document": docs[idx],
                     "metadata": metas[idx],
                     "score": float(scores[idx]),
-                    "base_score": float(self.reranker.predict([[query, docs[idx]]])[0]),  # Score original
+                    "base_score": float(self.reranker.predict([[query, docs[idx]]])[0]),
                     "priority": metas[idx].get("prioridad", 5),
                     "reranked": True
                 })
@@ -155,7 +179,7 @@ class RAGService:
             # Sin re-ranking, usar distancias de ChromaDB
             results = []
             for i in range(min(len(docs), n_results)):
-                # Convertir distancia a score (menor distancia = mayor score)
+                # Convertir distancia a score
                 base_score = 1 / (1 + distances[i])
                 
                 # Aplicar boost de prioridad
@@ -182,13 +206,16 @@ class RAGService:
         self._save_to_cache(cache_key, results)
         
         return results
+
+    # 🔥 NUEVO: Limpiar cache de embeddings
+    def clear_embedding_cache(self):
+        """Limpia el cache de embeddings en memoria"""
+        self._embedding_cache.clear()
+        print("🗑️  Cache de embeddings limpiado")
         
     def clear_cache(self, id_agente: Optional[int] = None):
         """
         Limpia el caché de Redis
-        
-        Args:
-            id_agente: Si se especifica, solo limpia ese agente. Si es None, limpia todo.
         """
         if not self.use_cache or not self.redis:
             print("⚠️  Caché no está habilitado")
@@ -217,24 +244,32 @@ class RAGService:
 
     def get_cache_stats(self) -> Dict:
         """Obtiene estadísticas del caché"""
+        stats = {
+            "embedding_cache_size": len(self._embedding_cache),
+            "embedding_cache_max": self._max_cache_size
+        }
+        
         if not self.use_cache or not self.redis:
-            return {"enabled": False}
+            stats["redis_enabled"] = False
+            return stats
         
         try:
             info = self.redis.info("stats")
             keys_count = len(self.redis.keys("rag:*"))
             
-            return {
-                "enabled": True,
-                "total_keys": keys_count,
-                "hits": info.get("keyspace_hits", 0),
-                "misses": info.get("keyspace_misses", 0),
-                "hit_rate": info.get("keyspace_hits", 0) / max(
+            stats.update({
+                "redis_enabled": True,
+                "redis_total_keys": keys_count,
+                "redis_hits": info.get("keyspace_hits", 0),
+                "redis_misses": info.get("keyspace_misses", 0),
+                "redis_hit_rate": info.get("keyspace_hits", 0) / max(
                     info.get("keyspace_hits", 0) + info.get("keyspace_misses", 0), 1
                 ) * 100
-            }
+            })
         except Exception as e:
-            return {"enabled": True, "error": str(e)}
+            stats["redis_error"] = str(e)
+        
+        return stats
 
     # ========== Resto de métodos sin cambios ==========
     
@@ -251,7 +286,9 @@ class RAGService:
         collection = self.create_collection_if_missing(id_agente)
 
         doc_text = self._format_document(unidad, categoria)
-        emb = self.embedder.encode([doc_text]).tolist()[0]
+        
+        # 🔥 CAMBIO: Usar embedding cacheado
+        emb = self._get_cached_embedding(doc_text)
         doc_id = f"unidad_{unidad.id_contenido}"
 
         collection.upsert(
@@ -267,7 +304,6 @@ class RAGService:
             }]
         )
         
-        # 🔥 Limpiar caché del agente porque cambió el contenido
         self.clear_cache(id_agente)
         
         return {"ok": True, "id": doc_id}
@@ -278,7 +314,9 @@ class RAGService:
         collection = self.create_collection_if_missing(id_agente)
 
         text = f"Categoria: {categoria.nombre}\nDescripcion: {categoria.descripcion or ''}"
-        emb = self.embedder.encode([text]).tolist()[0]
+        
+        # 🔥 CAMBIO: Usar embedding cacheado
+        emb = self._get_cached_embedding(text)
         doc_id = f"categoria_{categoria.id_categoria}"
 
         collection.upsert(
@@ -291,7 +329,6 @@ class RAGService:
             }]
         )
         
-        # 🔥 Limpiar caché del agente
         self.clear_cache(id_agente)
         
         return {"ok": True, "id": doc_id}
@@ -331,7 +368,7 @@ class RAGService:
             metadatas.append({
                 "tipo": "categoria", 
                 "id_categoria": cat.id_categoria,
-                "prioridad": 5  # 🔥 Prioridad default para categorías
+                "prioridad": 5
             })
             ids.append(str(uuid.uuid4()))
 
@@ -348,7 +385,7 @@ class RAGService:
                     "id_contenido": u.id_contenido,
                     "id_categoria": u.id_categoria,
                     "titulo": u.titulo,
-                    "prioridad": u.prioridad  # 🔥 AGREGAR PRIORIDAD
+                    "prioridad": u.prioridad
                 })
                 ids.append(str(uuid.uuid4()))
 
@@ -402,26 +439,16 @@ class RAGService:
             return " > ".join(parts)
         except Exception:
             return categoria.nombre
-        
-
-
-        # app/rag/rag_service.py
 
     def delete_unidad(self, unidad_id: int, id_agente: int):
         """
         Elimina una unidad de contenido de ChromaDB
-        
-        Args:
-            unidad_id: ID de la unidad a eliminar
-            id_agente: ID del agente al que pertenece
         """
         collection = self.create_collection_if_missing(id_agente)
         doc_id = f"unidad_{unidad_id}"
         
         try:
             collection.delete(ids=[doc_id])
-            
-            # Limpiar caché del agente
             self.clear_cache(id_agente)
             
             return {"ok": True, "id": doc_id, "deleted": True}

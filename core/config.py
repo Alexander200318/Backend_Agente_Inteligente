@@ -21,9 +21,9 @@ class Settings(BaseSettings):
     #   BASE DE DATOS MYSQL
     # ============================================
     DB_HOST: str = "localhost"
-    DB_PORT: int = 3306
+    DB_PORT: int = 3307
     DB_USER: str = "root"
-    DB_PASSWORD: str = ""
+    DB_PASSWORD: str = "1234"
     DB_NAME: str = "chatbot_institucional"
     
     @property
