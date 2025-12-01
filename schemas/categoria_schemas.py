@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -9,6 +9,12 @@ class CategoriaBase(BaseModel):
     icono: Optional[str] = None
     color: Optional[str] = None
     orden: int = 0
+    
+    @field_validator('id_categoria_padre')
+    @classmethod
+    def convert_zero_to_none(cls, v):
+        """Convierte 0 a None para categorías raíz"""
+        return None if v == 0 else v
 
 class CategoriaCreate(CategoriaBase):
     id_agente: int
@@ -21,11 +27,18 @@ class CategoriaUpdate(BaseModel):
     color: Optional[str] = None
     orden: Optional[int] = None
     activo: Optional[bool] = None
+    
+    @field_validator('id_categoria_padre')
+    @classmethod
+    def convert_zero_to_none(cls, v):
+        """Convierte 0 a None para categorías raíz"""
+        return None if v == 0 else v
 
 class CategoriaResponse(CategoriaBase):
     id_categoria: int
     id_agente: int
     activo: bool
     fecha_creacion: datetime
+    
     class Config:
         from_attributes = True

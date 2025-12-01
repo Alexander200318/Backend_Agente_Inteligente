@@ -73,6 +73,14 @@
 
         <!-- Input -->
         <div id="chat-input-area">
+            <button id="mic-button" title="Hablar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+            </button>
             <input type="text" id="chat-input" placeholder="Escribe tu mensaje...">
             <button id="send-button">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -83,5 +91,68 @@
     </div>
 
     <script src="/static/js/widget.js"></script>
+    <script>
+        // Reconocimiento de voz
+        window.addEventListener('load', function() {
+            const micButton = document.getElementById('mic-button');
+            const chatInput = document.getElementById('chat-input');
+            
+            if (!micButton || !chatInput) return;
+            
+            let recognition = null;
+            let isListening = false;
+
+            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.lang = 'es-ES';
+                recognition.continuous = false;
+                recognition.interimResults = false;
+
+                recognition.onstart = function() {
+                    isListening = true;
+                    micButton.style.color = '#e74c3c';
+                    micButton.style.backgroundColor = '#ffe6e6';
+                };
+
+                recognition.onresult = function(event) {
+                    const transcript = event.results[0][0].transcript;
+                    chatInput.value = transcript;
+                };
+
+                recognition.onend = function() {
+                    isListening = false;
+                    micButton.style.color = '';
+                    micButton.style.backgroundColor = '';
+                };
+
+                recognition.onerror = function(event) {
+                    console.error('Error de reconocimiento:', event.error);
+                    if (event.error === 'not-allowed') {
+                        alert('Debes permitir el acceso al micrófono en la configuración de tu navegador');
+                    } else {
+                        alert('Error: ' + event.error);
+                    }
+                    isListening = false;
+                    micButton.style.color = '';
+                    micButton.style.backgroundColor = '';
+                };
+
+                micButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (isListening) {
+                        recognition.stop();
+                    } else {
+                        recognition.start();
+                    }
+                });
+            } else {
+                micButton.style.display = 'none';
+                console.error('Reconocimiento de voz no soportado');
+            }
+        });
+    </script>
 </body>
 </html>

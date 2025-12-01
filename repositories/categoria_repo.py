@@ -51,9 +51,10 @@ class CategoriaRepository:
     def delete(self, id_categoria: int):
         cat = self.get_by_id(id_categoria)
         try:
-            cat.activo = False
+            self.db.delete(cat)
+            """cat.activo = False"""
             self.db.commit()
-            return {"message": "Categoría desactivada", "id": id_categoria}
+            return {"message": "Categoría eliminada", "id": id_categoria}
         except Exception as e:
             self.db.rollback()
             raise DatabaseException(str(e))

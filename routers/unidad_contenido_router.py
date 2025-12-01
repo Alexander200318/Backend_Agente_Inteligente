@@ -1,3 +1,4 @@
+# app/routers/unidad_contenido_router.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -43,3 +44,47 @@ def eliminar_contenido(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# app/routers/unidad_contenido_router.py
+
+@router.post("/reindex/all")
+def reindexar_todo_contenido(db: Session = Depends(get_db)):
+    """
+    Re-indexa TODOS los contenidos activos en ChromaDB
+    Útil después de resetear ChromaDB
+    """
+    from models.unidad_contenido import UnidadContenido
+    from models.categoria import Categoria
+    
+    service = UnidadContenidoService(db)
+    
+    # Obtener todos los contenidos activos
+    contenidos = db.query(UnidadContenido).filter(
+        UnidadContenido.estado == "activo"
+    ).all()
+    
+    reindexados = 0
+    errores = []
+    
+    for contenido in contenidos:
+        try:
+            # Obtener categoría
+            categoria = db.query(Categoria).filter(
+                Categoria.id_categoria == contenido.id_categoria
+            ).first()
+            
+            if categoria:
+                service.rag.ingest_unidad(contenido, categoria)
+                reindexados += 1
+        except Exception as e:
+            errores.append({
+                "id_contenido": contenido.id_contenido,
+                "error": str(e)
+            })
+    
+    return {
+        "ok": True,
+        "total_contenidos": len(contenidos),
+        "reindexados": reindexados,
+        "errores": errores
+    }
