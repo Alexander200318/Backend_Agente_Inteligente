@@ -36,14 +36,18 @@ class PersonaService:
             if edad < 0 or edad > 120:
                 raise ValidationException("Fecha de nacimiento inválida")
         
-        # Validación: departamento requerido para docentes y administrativos
-        if persona_data.tipo_persona in [TipoPersonaEnum.docente, TipoPersonaEnum.administrativo]:
-            if not persona_data.id_departamento:
-                raise ValidationException(
-                    f"El personal {persona_data.tipo_persona.value} debe tener un departamento asignado"
-                )
+        # ❌ ELIMINADO: Validación de departamento obligatorio
+        # El departamento es opcional para tipo administrativo
+        # (SuperAdmin y Admin no requieren departamento, solo Funcionarios lo necesitan)
+        # La validación específica se realiza al asignar roles
         
-        # Validación: departamento existe y está activo
+        # if persona_data.tipo_persona in [TipoPersonaEnum.docente, TipoPersonaEnum.administrativo]:
+        #     if not persona_data.id_departamento:
+        #         raise ValidationException(
+        #             f"El personal {persona_data.tipo_persona.value} debe tener un departamento asignado"
+        #         )
+        
+        # ✅ MANTENER: Validación de que el departamento existe y está activo (si se proporciona)
         if persona_data.id_departamento:
             departamento = self.departamento_repo.get_by_id(persona_data.id_departamento)
             
