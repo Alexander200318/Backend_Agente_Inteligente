@@ -1,29 +1,28 @@
-# app/routers/chat_router.py
+# routers/chat_router.py (ACTUALIZADO)
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from database.database import get_db 
 from pydantic import BaseModel
 from ollama.ollama_agent_service import OllamaAgentService
+from utils.json_utils import safe_json_dumps
 from typing import Optional
-import json
+from datetime import datetime
+import asyncio
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 class ChatRequest(BaseModel):
     agent_id: int
     message: str
-    k: Optional[int] = None              # 🔥 CAMBIO: Ahora opcional
-    use_reranking: Optional[bool] = None # 🔥 CAMBIO: Ahora opcional
-    temperatura: Optional[float] = None  # 🔥 NUEVO
-    max_tokens: Optional[int] = None     # 🔥 NUEVO
+    k: Optional[int] = None
+    use_reranking: Optional[bool] = None
+    temperatura: Optional[float] = None
+    max_tokens: Optional[int] = None
 
-# ✅ Endpoint SIN streaming (mantiene compatibilidad)
+# ✅ Endpoint SIN streaming
 @router.post("/agent")
 def chat_with_agent(payload: ChatRequest, db: Session = Depends(get_db)):
-    """
-    Chatea con un agente específico usando RAG + Ollama (sin streaming)
-    """
     service = OllamaAgentService(db)
     
     try:
@@ -40,19 +39,15 @@ def chat_with_agent(payload: ChatRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 🔥 NUEVO: Endpoint CON streaming
+# 🔥 Endpoint CON streaming (MEJORADO - Opción 2)
 @router.post("/agent/stream")
-def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get_db)):
-    """
-    Chatea con un agente específico usando RAG + Ollama (con streaming)
-    
-    Retorna Server-Sent Events (SSE) con formato:
-    data: {"type": "token", "content": "texto"}
-    """
+async def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get_db)):
     service = OllamaAgentService(db)
     
-    def event_generator():
-        """Genera eventos SSE"""
+    async def event_generator():
+        last_event_time = datetime.now()
+        heartbeat_interval = 15  # segundos
+        
         try:
             for event in service.chat_with_agent_stream(
                 id_agente=payload.agent_id,
@@ -62,16 +57,31 @@ def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get_db)):
                 temperatura=payload.temperatura,
                 max_tokens=payload.max_tokens
             ):
-                # Formato SSE: data: {json}\n\n
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                # Enviar evento
+                yield f"data: {safe_json_dumps(event)}\n\n"
+                last_event_time = datetime.now()
                 
+                # Heartbeat opcional (solo si tarda mucho)
+                await asyncio.sleep(0)  # Permite other tasks
+                
+                if (datetime.now() - last_event_time).seconds > heartbeat_interval:
+                    yield f": heartbeat\n\n"
+                    last_event_time = datetime.now()
+            
+            # Señal de finalización
+            yield f"data: {safe_json_dumps({'type': 'complete'})}\n\n"
+            
         except Exception as e:
-            # Enviar error como evento
             error_event = {
                 "type": "error",
-                "content": str(e)
+                "content": str(e),
+                "timestamp": datetime.now().isoformat()
             }
-            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+            yield f"data: {safe_json_dumps(error_event)}\n\n"
+        
+        finally:
+            # Cerrar conexión limpiamente
+            yield "data: [DONE]\n\n"
     
     return StreamingResponse(
         event_generator(),
@@ -79,15 +89,14 @@ def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get_db)):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Nginx: desactivar buffering
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+            "Content-Type": "text/event-stream; charset=utf-8"
         }
     )
 
 @router.get("/models")
 def list_models(db: Session = Depends(get_db)):
-    """
-    Lista modelos disponibles en Ollama
-    """
     service = OllamaAgentService(db)
     models = service.list_available_models()
     

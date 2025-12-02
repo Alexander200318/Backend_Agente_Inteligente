@@ -86,7 +86,7 @@ class OllamaAgentService:
                 stream=False,
                 temperature=temperatura_final,
                 max_tokens=max_tokens_final,
-                options={"keep_alive": "-1"}
+                options={"keep_alive": "15m"}
             )
             
             return {
@@ -119,7 +119,7 @@ class OllamaAgentService:
                         stream=False,
                         temperature=temperatura_final,
                         max_tokens=max_tokens_final,
-                        options={"keep_alive": "-1"}
+                        options={"keep_alive": "15m"}
                     )
                     return {
                         "ok": True,
@@ -248,7 +248,7 @@ class OllamaAgentService:
                     prompt=prompt,
                     temperature=temperatura_final,
                     max_tokens=max_tokens_final,
-                    options={"keep_alive": "-1"}
+                    options={"keep_alive": "15m"}
                 ):
                     full_response += token
                     
@@ -292,7 +292,7 @@ class OllamaAgentService:
                         prompt=prompt,
                         temperature=temperatura_final,
                         max_tokens=max_tokens_final,
-                        options={"keep_alive": "-1"}
+                        options={"keep_alive": "15m"}
                     ):
                         full_response += token
                         yield {
