@@ -246,7 +246,7 @@ function inicializarChat() {
     addBotMessage('¡Hola! Soy el asistente virtual de TEC AZUAY. ¿En qué puedo ayudarte hoy?');
 }
 
-// 🔥 NUEVA FUNCIÓN: Send message con streaming
+// ==================== ENVIAR MENSAJE CON TIMEOUT Y RETRY ====================
 async function sendMessage() {
     const mensaje = chatInput.value.trim();
     if (!mensaje) return;
@@ -262,61 +262,124 @@ async function sendMessage() {
     sendButton.disabled = true;
     typingIndicator.classList.add('active');
 
-    try {
-        let endpoint, body;
+    // 🔥 Configuración de reintentos
+    const MAX_RETRIES = 2;
+    const TIMEOUT_MS = 60000; // 60 segundos
+    
+    let attempt = 0;
+    let success = false;
 
-        if (selectedAgentId) {
-            endpoint = `${API_BASE_URL}/chat/agent/stream`;  // 🔥 CAMBIO: /stream
-            body = { 
-                message: mensaje, 
-                agent_id: Number(selectedAgentId), 
-                k: 2,  // 🔥 Optimizado
-                use_reranking: false  // 🔥 Optimizado
-            };
-        } else {
-            endpoint = `${API_BASE_URL}/chat/auto/stream`;  // 🔥 CAMBIO: /stream
-            body = { 
-                message: mensaje, 
-                departamento_codigo: "", 
-                k: 2  // 🔥 Optimizado
-            };
+    while (attempt <= MAX_RETRIES && !success) {
+        try {
+            attempt++;
+            
+            if (attempt > 1) {
+                console.log(`🔄 Reintento ${attempt}/${MAX_RETRIES + 1}...`);
+                addBotMessage(`⚠️ Reintentando conexión (${attempt}/${MAX_RETRIES + 1})...`);
+                await sleep(1000 * attempt); // Backoff: 1s, 2s, 3s
+            }
+
+            let endpoint, body;
+
+            if (selectedAgentId) {
+                endpoint = `${API_BASE_URL}/chat/agent/stream`;
+                body = { 
+                    message: mensaje, 
+                    agent_id: Number(selectedAgentId)
+                };
+            } else {
+                endpoint = `${API_BASE_URL}/chat/auto/stream`;
+                body = { 
+                    message: mensaje, 
+                    departamento_codigo: ""
+                };
+            }
+
+            // 🔥 NUEVO: Crear AbortController con timeout
+            currentStreamController = new AbortController();
+            const timeoutId = setTimeout(() => {
+                console.warn('⏱️ Timeout alcanzado, abortando...');
+                currentStreamController.abort();
+            }, TIMEOUT_MS);
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                    signal: currentStreamController.signal
+                });
+
+                // Limpiar timeout si la respuesta llega
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`Error del servidor: ${response.status}`);
+                }
+
+                // 🔥 Procesar stream
+                await processStream(response);
+                
+                success = true; // ✅ Éxito
+                console.log('✅ Stream completado exitosamente');
+
+            } catch (fetchError) {
+                clearTimeout(timeoutId);
+                
+                // Si es abort por timeout o usuario
+                if (fetchError.name === 'AbortError') {
+                    // Verificar si fue timeout o cancelación manual
+                    if (currentStreamController.signal.aborted) {
+                        throw new Error('Timeout: El servidor tardó demasiado en responder');
+                    } else {
+                        throw new Error('Cancelado por el usuario');
+                    }
+                }
+                
+                throw fetchError; // Re-lanzar otros errores
+            }
+
+        } catch (error) {
+            console.error(`❌ Intento ${attempt} falló:`, error.message);
+
+            // Si es el último intento, mostrar error final
+            if (attempt > MAX_RETRIES) {
+                typingIndicator.classList.remove('active');
+                
+                let errorMsg = 'Lo siento, no pude conectar con el servidor.';
+                
+                if (error.message.includes('Timeout')) {
+                    errorMsg = '⏱️ El servidor está tardando demasiado. Por favor, intenta con una pregunta más corta.';
+                } else if (error.message.includes('Cancelado')) {
+                    console.log('Stream cancelado por el usuario');
+                    break; // No mostrar error si el usuario canceló
+                } else if (error.message.includes('Failed to fetch')) {
+                    errorMsg = '🔌 No hay conexión con el servidor. Verifica tu conexión a internet.';
+                }
+                
+                addBotMessage(errorMsg);
+            }
+            
+            // Si no es el último intento, continuar el loop
+            if (attempt <= MAX_RETRIES) {
+                continue;
+            }
+        } finally {
+            currentStreamController = null;
         }
-
-        // 🔥 NUEVO: Usar fetch con streaming
-        currentStreamController = new AbortController();
-        
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: currentStreamController.signal
-        });
-
-        if (!response.ok) {
-            throw new Error('Error en el servidor');
-        }
-
-        // 🔥 NUEVO: Procesar stream
-        await processStream(response);
-
-    } catch (error) {
-        if (error.name === 'AbortError') {
-            console.log('Stream cancelado por el usuario');
-        } else {
-            console.error('Error:', error);
-            typingIndicator.classList.remove('active');
-            addBotMessage('Lo siento, hubo un error al conectar con el servidor.');
-        }
-    } finally {
-        currentStreamController = null;
-        sendButton.disabled = false;
-        chatInput.focus();
     }
+
+    // Limpiar estado final
+    typingIndicator.classList.remove('active');
+    sendButton.disabled = false;
+    chatInput.focus();
 }
 
-// static/js/widget.js
+// 🔥 NUEVA: Función helper para sleep
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-// 🔥 REEMPLAZAR esta función completa
 async function processStream(response) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -324,24 +387,41 @@ async function processStream(response) {
     let fullResponse = '';
     let currentBotMessageDiv = null;
     let messageContent = null;
-    let buffer = '';  // 🔥 Buffer para líneas incompletas
+    let buffer = '';
     
     try {
+        // 🔥 NUEVO: Heartbeat detection
+        let lastDataTime = Date.now();
+        const HEARTBEAT_TIMEOUT = 30000; // 30 segundos sin datos
+        
+        // 🔥 NUEVO: Verificar heartbeat periódicamente
+        const heartbeatCheck = setInterval(() => {
+            const timeSinceLastData = Date.now() - lastDataTime;
+            if (timeSinceLastData > HEARTBEAT_TIMEOUT) {
+                console.warn('⚠️ Sin datos por más de 30s, posible conexión perdida');
+                clearInterval(heartbeatCheck);
+                reader.cancel();
+                throw new Error('Conexión perdida: sin respuesta del servidor');
+            }
+        }, 5000); // Revisar cada 5 segundos
+        
         while (true) {
             const { done, value } = await reader.read();
             
             if (done) {
+                clearInterval(heartbeatCheck);
                 console.log('✅ Stream completado');
                 break;
             }
+            
+            // 🔥 Actualizar timestamp
+            lastDataTime = Date.now();
             
             // Decodificar chunk
             buffer += decoder.decode(value, { stream: true });
             
             // Procesar líneas completas
             const lines = buffer.split('\n');
-            
-            // Guardar última línea incompleta
             buffer = lines.pop() || '';
             
             for (const line of lines) {
@@ -352,12 +432,10 @@ async function processStream(response) {
                     if (!jsonStr) continue;
                     
                     const event = JSON.parse(jsonStr);
-                    console.log('📦 Evento recibido:', event.type, event.content?.substring(0, 50));
                     
                     switch (event.type) {
                         case 'status':
                             console.log('📊', event.content);
-                            // Opcional: mostrar en UI
                             break;
                             
                         case 'context':
@@ -370,7 +448,6 @@ async function processStream(response) {
                             break;
                             
                         case 'token':
-                            // 🔥 CRÍTICO: Crear mensaje bot si no existe
                             if (!currentBotMessageDiv) {
                                 typingIndicator.classList.remove('active');
                                 
@@ -379,49 +456,40 @@ async function processStream(response) {
                                 currentBotMessageDiv.innerHTML = `
                                     <div class="message-content">
                                         <span class="bot-text"></span>
-                                        <span class="typing-cursor">▊</span>
+                                        <span class="typing-cursor">|</span>
                                         <div class="message-time">${getCurrentTime()}</div>
                                     </div>
                                 `;
                                 chatMessages.appendChild(currentBotMessageDiv);
                                 messageContent = currentBotMessageDiv.querySelector('.bot-text');
-                                
-                                console.log('✅ Mensaje bot creado');
                             }
                             
-                            // 🔥 CRÍTICO: Agregar token INMEDIATAMENTE
                             fullResponse += event.content;
-                            messageContent.textContent = fullResponse;  // ← SIN formatear aún
-                            
+                            messageContent.textContent = fullResponse;
                             scrollToBottom();
                             break;
                             
                         case 'done':
+                            clearInterval(heartbeatCheck);
                             console.log('✅ Generación completada');
                             
-                            // Remover clase streaming y cursor
                             if (currentBotMessageDiv) {
                                 currentBotMessageDiv.classList.remove('streaming');
                                 const cursor = currentBotMessageDiv.querySelector('.typing-cursor');
                                 if (cursor) cursor.remove();
                                 
-                                // 🔥 AHORA SÍ formatear el mensaje completo
                                 messageContent.innerHTML = formatBotMessage(fullResponse);
                             }
                             
                             typingIndicator.classList.remove('active');
-                            
-                            // Leer en voz alta solo al terminar
                             speakText(fullResponse);
-                            
-                            console.log('📊 Metadata:', event.metadata);
                             break;
                             
                         case 'error':
+                            clearInterval(heartbeatCheck);
                             console.error('❌', event.content);
                             typingIndicator.classList.remove('active');
-                            addBotMessage(`Error: ${event.content}`);
-                            break;
+                            throw new Error(event.content);
                     }
                     
                 } catch (e) {
@@ -430,7 +498,7 @@ async function processStream(response) {
             }
         }
         
-        // Procesar buffer final si quedó algo
+        // Procesar buffer final
         if (buffer.trim() && buffer.startsWith('data: ')) {
             try {
                 const jsonStr = buffer.substring(6).trim();
@@ -447,7 +515,7 @@ async function processStream(response) {
     } catch (error) {
         console.error('❌ Error en stream:', error);
         typingIndicator.classList.remove('active');
-        addBotMessage('Lo siento, hubo un error al procesar la respuesta.');
+        throw error; // Re-lanzar para que sendMessage() lo maneje
     } finally {
         typingIndicator.classList.remove('active');
     }

@@ -34,8 +34,8 @@ class OllamaClient:
         default_options = {
             "num_predict": max_tokens,
             "temperature": temperature,
-            "top_p": 0.9,
-            "top_k": 40
+            "top_p": 0.7,
+            "top_k": 25
         }
         
         if options:
@@ -91,7 +91,7 @@ class OllamaClient:
             prompt: Prompt completo
             temperature: Temperatura (0.0-1.0)
             max_tokens: Máximo de tokens a generar
-            options: Opciones adicionales (ej: {"keep_alive": "-1"})
+            options: Opciones adicionales (ej: {"keep_alive": "15m"})
         
         Yields:
             str: Fragmentos de texto a medida que se generan
@@ -106,8 +106,8 @@ class OllamaClient:
         default_options = {
             "num_predict": max_tokens,
             "temperature": temperature,
-            "top_p": 0.9,
-            "top_k": 40
+            "top_p": 0.7,
+            "top_k": 25
         }
         
         if options:
