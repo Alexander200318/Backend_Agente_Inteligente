@@ -33,7 +33,7 @@ class AgenteVirtual(Base):
     icono = Column(String(100))
     
     # Configuración de IA
-    modelo_ia = Column(String(100), default='claude-sonnet-4-20250514')
+    modelo_ia = Column(String(100), default='llama3:8b')
     prompt_sistema = Column(Text)
     prompt_especializado = Column(Text)
     temperatura = Column(DECIMAL(3, 2), default=0.7)

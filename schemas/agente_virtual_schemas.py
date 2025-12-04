@@ -16,7 +16,7 @@ class AgenteVirtualBase(BaseModel):
     icono: Optional[str] = None
     
     # Configuración IA
-    modelo_ia: str = Field("claude-sonnet-4-20250514", max_length=100)
+    modelo_ia: str = Field("llama3:8b", max_length=100)
     prompt_sistema: Optional[str] = None
     prompt_especializado: Optional[str] = None
     temperatura: Decimal = Field(Decimal("0.7"), ge=0, le=2)
