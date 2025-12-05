@@ -10,6 +10,20 @@ from models.usuario import Usuario
 from repositories.usuario_repo import UsuarioRepository
 from exceptions.base import NotFoundException, BadRequestException
 
+
+
+from schemas.usuario_completo_schemas import UsuarioCompletoCreate, UsuarioCompletoResponse
+
+from models.persona import Persona
+from models.usuario_rol import UsuarioRol
+from models.rol import Rol
+from repositories.persona_repo import PersonaRepository
+from repositories.usuario_rol_repo import UsuarioRolRepository
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+
+
+
+
 # Importar funciones de seguridad desde core
 from core.config import settings
 from core.security import (
@@ -390,6 +404,231 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"
+        )
+    
+
+
+# Agregar este endpoint después de la función login
+@router.post("/crear-completo", response_model=UsuarioCompletoResponse, status_code=status.HTTP_201_CREATED)
+async def crear_usuario_completo(
+    usuario_data: UsuarioCompletoCreate,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    🔒 TRANSACCIÓN ATÓMICA: Crear Persona + Usuario + Roles
+    
+    Si falla cualquier paso, se revierte TODA la operación.
+    Solo si todo es exitoso se confirma la transacción.
+    """
+    client_ip = get_client_ip(request)
+    
+    try:
+        # ========== VALIDACIONES PREVIAS (sin modificar DB) ==========
+        
+        # 1. Validar que la cédula no exista
+        persona_existente = db.query(Persona).filter(
+            Persona.cedula == usuario_data.persona.cedula
+        ).first()
+        
+        if persona_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ya existe una persona con la cédula {usuario_data.persona.cedula}"
+            )
+        
+        # 2. Validar que el username no exista
+        usuario_existente = db.query(Usuario).filter(
+            Usuario.username == usuario_data.username
+        ).first()
+        
+        if usuario_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El username '{usuario_data.username}' ya está en uso"
+            )
+        
+        # 3. Validar que el email no exista
+        email_existente = db.query(Usuario).filter(
+            Usuario.email == usuario_data.email
+        ).first()
+        
+        if email_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"El email '{usuario_data.email}' ya está en uso"
+            )
+        
+        # 4. Validar que todos los roles existan
+        for id_rol in usuario_data.roles:
+            rol = db.query(Rol).filter(Rol.id_rol == id_rol).first()
+            if not rol:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El rol con ID {id_rol} no existe"
+                )
+        
+        # ========== INICIO DE TRANSACCIÓN ATÓMICA ==========
+        
+        # PASO 1: Crear Persona
+        nueva_persona = Persona(
+            cedula=usuario_data.persona.cedula,
+            nombre=usuario_data.persona.nombre,
+            apellido=usuario_data.persona.apellido,
+            fecha_nacimiento=usuario_data.persona.fecha_nacimiento,
+            genero=usuario_data.persona.genero,
+            telefono=usuario_data.persona.telefono,
+            celular=usuario_data.persona.celular,
+            email_personal=usuario_data.persona.email_personal,
+            direccion=usuario_data.persona.direccion,
+            ciudad=usuario_data.persona.ciudad,
+            provincia=usuario_data.persona.provincia,
+            tipo_persona=usuario_data.persona.tipo_persona,
+            id_departamento=usuario_data.persona.id_departamento,
+            cargo=usuario_data.persona.cargo,
+            fecha_ingreso_institucion=usuario_data.persona.fecha_ingreso_institucion,
+            contacto_emergencia_nombre=usuario_data.persona.contacto_emergencia_nombre,
+            contacto_emergencia_telefono=usuario_data.persona.contacto_emergencia_telefono,
+            contacto_emergencia_relacion=usuario_data.persona.contacto_emergencia_relacion,
+            foto_perfil=usuario_data.persona.foto_perfil,
+            estado="activo",
+            fecha_registro=datetime.now()
+        )
+        
+        db.add(nueva_persona)
+        db.flush()  # Obtener id_persona sin hacer commit
+        
+        # PASO 2: Crear Usuario
+        password_hash = get_password_hash(usuario_data.password)
+        
+        nuevo_usuario = Usuario(
+            username=usuario_data.username,
+            email=usuario_data.email,
+            password=password_hash,
+            estado=usuario_data.estado,
+            id_persona=nueva_persona.id_persona,
+            requiere_cambio_password=True,
+            intentos_fallidos=0,
+            fecha_creacion=datetime.now()
+        )
+        
+        db.add(nuevo_usuario)
+        db.flush()  # Obtener id_usuario sin hacer commit
+        
+        # PASO 3: Asignar Roles
+        roles_asignados = []
+        for id_rol in usuario_data.roles:
+            usuario_rol = UsuarioRol(
+                id_usuario=nuevo_usuario.id_usuario,
+                id_rol=id_rol,
+                fecha_asignacion=datetime.now(),
+                activo=True
+            )
+            db.add(usuario_rol)
+            db.flush()
+            
+            # Obtener info del rol para la respuesta
+            rol_info = db.query(Rol).filter(Rol.id_rol == id_rol).first()
+            roles_asignados.append({
+                "id_rol": id_rol,
+                "nombre_rol": rol_info.nombre_rol,
+                "nivel_jerarquia": rol_info.nivel_jerarquia,
+                "fecha_asignacion": usuario_rol.fecha_asignacion.isoformat()
+            })
+        
+        # ========== COMMIT DE LA TRANSACCIÓN ==========
+        # Si llegamos aquí, TODO fue exitoso
+        db.commit()
+        
+        # Refrescar objetos
+        db.refresh(nuevo_usuario)
+        db.refresh(nueva_persona)
+        
+        log_security_event(
+            "USER_CREATED_COMPLETE",
+            nuevo_usuario.username,
+            f"Usuario completo creado con {len(roles_asignados)} roles",
+            success=True,
+            ip_address=client_ip
+        )
+        
+        # Respuesta exitosa
+        return {
+            "message": "Usuario creado exitosamente",
+            "usuario": {
+                "id_usuario": nuevo_usuario.id_usuario,
+                "username": nuevo_usuario.username,
+                "email": nuevo_usuario.email,
+                "estado": nuevo_usuario.estado,
+                "id_persona": nuevo_usuario.id_persona
+            },
+            "persona": {
+                "id_persona": nueva_persona.id_persona,
+                "cedula": nueva_persona.cedula,
+                "nombre": nueva_persona.nombre,
+                "apellido": nueva_persona.apellido,
+                "tipo_persona": nueva_persona.tipo_persona
+            },
+            "roles_asignados": roles_asignados
+        }
+        
+    except HTTPException:
+        # Re-lanzar excepciones HTTP (validaciones)
+        db.rollback()
+        raise
+        
+    except IntegrityError as e:
+        # Error de integridad de base de datos (claves duplicadas, etc.)
+        db.rollback()
+        
+        error_msg = str(e.orig)
+        if "Duplicate entry" in error_msg or "UNIQUE constraint" in error_msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya existe un registro con estos datos"
+            )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error de integridad en la base de datos"
+        )
+        
+    except SQLAlchemyError as e:
+        # Error de base de datos - ROLLBACK automático
+        db.rollback()
+        
+        log_security_event(
+            "USER_CREATION_FAILED",
+            usuario_data.username,
+            f"Error en base de datos: {str(e)}",
+            success=False,
+            ip_address=client_ip
+        )
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error en la base de datos. La operación fue revertida"
+        )
+        
+    except Exception as e:
+        # Cualquier otro error - ROLLBACK
+        db.rollback()
+        
+        log_security_event(
+            "USER_CREATION_ERROR",
+            usuario_data.username,
+            f"Error inesperado: {str(e)}",
+            success=False,
+            ip_address=client_ip
+        )
+        
+        print(f"❌ ERROR INESPERADO: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error inesperado. La operación fue revertida completamente"
         )
 
 
