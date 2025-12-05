@@ -49,10 +49,10 @@ class UsuarioResponse(UsuarioBase):
     id_usuario: int
     id_persona: int
     estado: EstadoUsuarioEnum
-    requiere_cambio_password: bool
+    requiere_cambio_password: bool = False
     intentos_fallidos: int
     ultimo_acceso: Optional[datetime]
-    fecha_creacion: datetime
+    fecha_creacion: Optional[datetime] = None
     persona: Optional[PersonaResponse]
 
     class Config:

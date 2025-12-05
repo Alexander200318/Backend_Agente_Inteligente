@@ -38,7 +38,11 @@ class Usuario(Base):
     token_expiracion = Column(DateTime)
     
     # Auditoría
-    fecha_creacion = Column(DateTime, server_default=func.current_timestamp())
+    fecha_creacion = Column(
+            DateTime,
+            nullable=False,
+            server_default=func.now()   # la pone la BD al crear el registro
+        )
     fecha_actualizacion = Column(DateTime, onupdate=func.current_timestamp())
     creado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'), nullable=True)
     
