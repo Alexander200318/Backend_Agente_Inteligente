@@ -105,7 +105,7 @@ class UsuarioInfo(BaseModel):
     email: str
     estado: str
     id_persona: int
-    requiere_cambio_password: bool = False
+    requiere_cambio_password: bool = True
     fecha_creacion: Optional[datetime] = None
 
 class PersonaInfo(BaseModel):

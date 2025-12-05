@@ -1,5 +1,5 @@
 # routers/usuario_router.py
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel, EmailStr, field_validator
@@ -17,6 +17,7 @@ from schemas.usuario_completo_schemas import UsuarioCompletoCreate, UsuarioCompl
 from models.persona import Persona
 from models.usuario_rol import UsuarioRol
 from models.rol import Rol
+from models.departamento import Departamento
 from repositories.persona_repo import PersonaRepository
 from repositories.usuario_rol_repo import UsuarioRolRepository
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
@@ -972,4 +973,223 @@ async def desbloquear_usuario(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al desbloquear usuario"
+        )
+    
+
+
+
+@router.get("/completo", status_code=status.HTTP_200_OK)
+async def listar_usuarios_completo(
+    skip: int = Query(0, ge=0, description="Registros a omitir (paginación)"),
+    limit: int = Query(100, ge=1, le=500, description="Límite de registros"),
+    estado: Optional[str] = Query(None, description="Filtrar por estado del usuario"),
+    id_departamento: Optional[int] = Query(None, description="Filtrar por departamento"),
+    id_rol: Optional[int] = Query(None, description="Filtrar por rol específico"),
+    busqueda: Optional[str] = Query(None, description="Buscar por nombre, apellido, username, email o cédula"),
+    db: Session = Depends(get_db)
+):
+    """
+    📋 Listar TODOS los usuarios con información COMPLETA
+    
+    ✅ Incluye:
+    - Datos del Usuario (username, email, estado, intentos_fallidos, último_acceso, etc.)
+    - Datos de Persona (nombre, apellido, cédula, teléfono, email_personal, cargo, etc.)
+    - Datos del Departamento (nombre, código, facultad, email, teléfono, ubicación)
+    - Todos los Roles asignados con información detallada (nombre, nivel, permisos, fecha_asignacion)
+    
+    🔍 Filtros disponibles:
+    - **estado**: activo, inactivo, bloqueado, suspendido
+    - **id_departamento**: Filtrar por departamento
+    - **id_rol**: Filtrar usuarios que tengan un rol específico
+    - **busqueda**: Buscar por nombre, apellido, username, email o cédula
+    
+    📊 Respuesta incluye:
+    - total: Cantidad total de usuarios (sin paginación)
+    - skip: Registros omitidos
+    - limit: Límite aplicado
+    - usuarios: Lista de usuarios con toda la información
+    """
+    try:
+        # Construir query base con joins
+        query = db.query(Usuario).join(
+            Persona, Usuario.id_persona == Persona.id_persona
+        ).outerjoin(
+            Departamento, Persona.id_departamento == Departamento.id_departamento
+        )
+        
+        # Aplicar filtros
+        if estado:
+            query = query.filter(Usuario.estado == estado)
+        
+        if id_departamento:
+            query = query.filter(Persona.id_departamento == id_departamento)
+        
+        if id_rol:
+            # Filtrar usuarios que tengan el rol específico
+            query = query.join(
+                UsuarioRol, Usuario.id_usuario == UsuarioRol.id_usuario
+            ).filter(
+                UsuarioRol.id_rol == id_rol,
+                UsuarioRol.activo == True
+            )
+        
+        if busqueda and busqueda.strip():
+            busqueda_lower = f"%{busqueda.lower()}%"
+            query = query.filter(
+                (Persona.nombre.ilike(busqueda_lower)) |
+                (Persona.apellido.ilike(busqueda_lower)) |
+                (Persona.cedula.ilike(busqueda_lower)) |
+                (Usuario.username.ilike(busqueda_lower)) |
+                (Usuario.email.ilike(busqueda_lower))
+            )
+        
+        # Contar total (antes de paginación)
+        total = query.distinct().count() if id_rol else query.count()
+        
+        # Aplicar paginación y ordenar
+        usuarios = query.distinct().order_by(
+            Persona.apellido.asc(), 
+            Persona.nombre.asc()
+        ).offset(skip).limit(limit).all()
+        
+        # Construir respuesta completa
+        usuarios_completos = []
+        
+        for usuario in usuarios:
+            # Obtener roles activos del usuario
+            roles_usuario = db.query(UsuarioRol).filter(
+                UsuarioRol.id_usuario == usuario.id_usuario,
+                UsuarioRol.activo == True
+            ).join(Rol).all()
+            
+            # Construir información de roles
+            roles_info = []
+            for ur in roles_usuario:
+                roles_info.append({
+                    "id_usuario_rol": ur.id_usuario_rol,
+                    "id_rol": ur.id_rol,
+                    "nombre_rol": ur.rol.nombre_rol,
+                    "descripcion": ur.rol.descripcion,
+                    "nivel_jerarquia": ur.rol.nivel_jerarquia,
+                    "fecha_asignacion": ur.fecha_asignacion.isoformat() if ur.fecha_asignacion else None,
+                    "fecha_expiracion": ur.fecha_expiracion.isoformat() if ur.fecha_expiracion else None,
+                    "motivo": ur.motivo,
+                    "activo": ur.activo,
+                    # Permisos del rol
+                    "permisos": {
+                        "puede_ver_usuarios": ur.rol.puede_ver_usuarios,
+                        "puede_crear_usuarios": ur.rol.puede_crear_usuarios,
+                        "puede_editar_usuarios": ur.rol.puede_editar_usuarios,
+                        "puede_eliminar_usuarios": ur.rol.puede_eliminar_usuarios,
+                        "puede_ver_roles": ur.rol.puede_ver_roles,
+                        "puede_crear_roles": ur.rol.puede_crear_roles,
+                        "puede_editar_roles": ur.rol.puede_editar_roles,
+                        "puede_eliminar_roles": ur.rol.puede_eliminar_roles,
+                        "puede_asignar_roles": ur.rol.puede_asignar_roles,
+                        "puede_ver_agentes": ur.rol.puede_ver_agentes,
+                        "puede_crear_agentes": ur.rol.puede_crear_agentes,
+                        "puede_editar_agentes": ur.rol.puede_editar_agentes,
+                        "puede_eliminar_agentes": ur.rol.puede_eliminar_agentes,
+                        "puede_ver_conversaciones": ur.rol.puede_ver_conversaciones,
+                        "puede_ver_todas_conversaciones": ur.rol.puede_ver_todas_conversaciones,
+                        "puede_exportar_conversaciones": ur.rol.puede_exportar_conversaciones,
+                        "puede_ver_departamentos": ur.rol.puede_ver_departamentos,
+                        "puede_crear_departamentos": ur.rol.puede_crear_departamentos,
+                        "puede_editar_departamentos": ur.rol.puede_editar_departamentos,
+                        "puede_eliminar_departamentos": ur.rol.puede_eliminar_departamentos,
+                        "puede_ver_contenido": ur.rol.puede_ver_contenido,
+                        "puede_crear_contenido": ur.rol.puede_crear_contenido,
+                        "puede_editar_contenido": ur.rol.puede_editar_contenido,
+                        "puede_eliminar_contenido": ur.rol.puede_eliminar_contenido,
+                        "puede_ver_logs": ur.rol.puede_ver_logs,
+                        "puede_configurar_sistema": ur.rol.puede_configurar_sistema,
+                        "puede_gestionar_api_keys": ur.rol.puede_gestionar_api_keys,
+                        "puede_exportar_datos": ur.rol.puede_exportar_datos,
+                        "puede_ver_estadisticas": ur.rol.puede_ver_estadisticas
+                    }
+                })
+            
+            # Información del departamento (si existe)
+            departamento_info = None
+            if usuario.persona and usuario.persona.departamento:
+                dept = usuario.persona.departamento
+                departamento_info = {
+                    "id_departamento": dept.id_departamento,
+                    "nombre": dept.nombre,
+                    "codigo": dept.codigo,
+                    "descripcion": dept.descripcion,
+                    "facultad": dept.facultad,
+                    "email": dept.email,
+                    "telefono": dept.telefono,
+                    "ubicacion": dept.ubicacion,
+                    "activo": dept.activo
+                }
+            
+            # Construir objeto completo del usuario
+            usuario_completo = {
+                # Datos del Usuario
+                "id_usuario": usuario.id_usuario,
+                "username": usuario.username,
+                "email": usuario.email,
+                "estado": usuario.estado,
+                "requiere_cambio_password": usuario.requiere_cambio_password,
+                "intentos_fallidos": usuario.intentos_fallidos,
+                "ultimo_acceso": usuario.ultimo_acceso.isoformat() if usuario.ultimo_acceso else None,
+                "ultimo_ip": usuario.ultimo_ip,
+                "fecha_creacion": usuario.fecha_creacion.isoformat() if usuario.fecha_creacion else None,
+                "fecha_actualizacion": usuario.fecha_actualizacion.isoformat() if usuario.fecha_actualizacion else None,
+                
+                # Datos de Persona
+                "persona": {
+                    "id_persona": usuario.persona.id_persona,
+                    "cedula": usuario.persona.cedula,
+                    "nombre": usuario.persona.nombre,
+                    "apellido": usuario.persona.apellido,
+                    "nombre_completo": f"{usuario.persona.nombre} {usuario.persona.apellido}",
+                    "fecha_nacimiento": usuario.persona.fecha_nacimiento.isoformat() if usuario.persona.fecha_nacimiento else None,
+                    "genero": usuario.persona.genero,
+                    "telefono": usuario.persona.telefono,
+                    "celular": usuario.persona.celular,
+                    "email_personal": usuario.persona.email_personal,
+                    "direccion": usuario.persona.direccion,
+                    "ciudad": usuario.persona.ciudad,
+                    "provincia": usuario.persona.provincia,
+                    "tipo_persona": usuario.persona.tipo_persona,
+                    "cargo": usuario.persona.cargo,
+                    "fecha_ingreso_institucion": usuario.persona.fecha_ingreso_institucion.isoformat() if usuario.persona.fecha_ingreso_institucion else None,
+                    "contacto_emergencia_nombre": usuario.persona.contacto_emergencia_nombre,
+                    "contacto_emergencia_telefono": usuario.persona.contacto_emergencia_telefono,
+                    "contacto_emergencia_relacion": usuario.persona.contacto_emergencia_relacion,
+                    "foto_perfil": usuario.persona.foto_perfil,
+                    "estado": usuario.persona.estado,
+                    "fecha_registro": usuario.persona.fecha_registro.isoformat() if usuario.persona.fecha_registro else None
+                } if usuario.persona else None,
+                
+                # Datos del Departamento
+                "departamento": departamento_info,
+                
+                # Roles asignados
+                "roles": roles_info,
+                "total_roles": len(roles_info),
+                
+                # Rol principal (el de mayor jerarquía = nivel más bajo)
+                "rol_principal": min(roles_info, key=lambda r: r["nivel_jerarquia"]) if roles_info else None
+            }
+            
+            usuarios_completos.append(usuario_completo)
+        
+        return {
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "usuarios": usuarios_completos
+        }
+        
+    except Exception as e:
+        print(f"❌ Error listando usuarios completos: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al listar usuarios: {str(e)}"
         )
