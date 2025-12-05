@@ -769,35 +769,7 @@ async def obtener_estadisticas(db: Session = Depends(get_db)):
     }
 
 
-@router.get("/{id_usuario}", status_code=status.HTTP_200_OK)
-async def obtener_usuario(
-    id_usuario: int,
-    db: Session = Depends(get_db)
-):
-    """🔍 Obtener usuario por ID"""
-    repo = UsuarioRepository(db)
-    
-    try:
-        usuario = repo.get_by_id(id_usuario, include_persona=True)
-        
-        return {
-            "id_usuario": usuario.id_usuario,
-            "username": usuario.username,
-            "email": usuario.email,
-            "estado": usuario.estado,
-            "requiere_cambio_password": usuario.requiere_cambio_password,
-            "intentos_fallidos": usuario.intentos_fallidos,
-            "ultimo_acceso": usuario.ultimo_acceso.isoformat() if usuario.ultimo_acceso else None,
-            "fecha_creacion": usuario.fecha_creacion.isoformat() if usuario.fecha_creacion else None,
-            "persona": {
-                "id_persona": usuario.persona.id_persona,
-                "nombre": usuario.persona.nombre,
-                "apellido": usuario.persona.apellido,
-                "email": usuario.persona.email
-            } if usuario.persona else None
-        }
-    except NotFoundException:
-        raise
+
 
 
 @router.put("/{id_usuario}", status_code=status.HTTP_200_OK)
@@ -976,7 +948,7 @@ async def desbloquear_usuario(
         )
     
 
-
+ # _________________________________________________________________________________
 
 @router.get("/completo", status_code=status.HTTP_200_OK)
 async def listar_usuarios_completo(
@@ -1044,10 +1016,10 @@ async def listar_usuarios_completo(
             )
         
         # Contar total (antes de paginación)
-        total = query.distinct().count() if id_rol else query.count()
-        
+        total = query.count()
+
         # Aplicar paginación y ordenar
-        usuarios = query.distinct().order_by(
+        usuarios = query.order_by(
             Persona.apellido.asc(), 
             Persona.nombre.asc()
         ).offset(skip).limit(limit).all()
@@ -1077,36 +1049,50 @@ async def listar_usuarios_completo(
                     "activo": ur.activo,
                     # Permisos del rol
                     "permisos": {
-                        "puede_ver_usuarios": ur.rol.puede_ver_usuarios,
-                        "puede_crear_usuarios": ur.rol.puede_crear_usuarios,
-                        "puede_editar_usuarios": ur.rol.puede_editar_usuarios,
-                        "puede_eliminar_usuarios": ur.rol.puede_eliminar_usuarios,
-                        "puede_ver_roles": ur.rol.puede_ver_roles,
-                        "puede_crear_roles": ur.rol.puede_crear_roles,
-                        "puede_editar_roles": ur.rol.puede_editar_roles,
-                        "puede_eliminar_roles": ur.rol.puede_eliminar_roles,
-                        "puede_asignar_roles": ur.rol.puede_asignar_roles,
-                        "puede_ver_agentes": ur.rol.puede_ver_agentes,
-                        "puede_crear_agentes": ur.rol.puede_crear_agentes,
-                        "puede_editar_agentes": ur.rol.puede_editar_agentes,
-                        "puede_eliminar_agentes": ur.rol.puede_eliminar_agentes,
-                        "puede_ver_conversaciones": ur.rol.puede_ver_conversaciones,
-                        "puede_ver_todas_conversaciones": ur.rol.puede_ver_todas_conversaciones,
-                        "puede_exportar_conversaciones": ur.rol.puede_exportar_conversaciones,
-                        "puede_ver_departamentos": ur.rol.puede_ver_departamentos,
-                        "puede_crear_departamentos": ur.rol.puede_crear_departamentos,
-                        "puede_editar_departamentos": ur.rol.puede_editar_departamentos,
-                        "puede_eliminar_departamentos": ur.rol.puede_eliminar_departamentos,
-                        "puede_ver_contenido": ur.rol.puede_ver_contenido,
-                        "puede_crear_contenido": ur.rol.puede_crear_contenido,
-                        "puede_editar_contenido": ur.rol.puede_editar_contenido,
-                        "puede_eliminar_contenido": ur.rol.puede_eliminar_contenido,
-                        "puede_ver_logs": ur.rol.puede_ver_logs,
+                        # ==== Usuarios ====
+                        "puede_ver_usuarios": ur.rol.puede_gestionar_usuarios,
+                        "puede_crear_usuarios": ur.rol.puede_gestionar_usuarios,
+                        "puede_editar_usuarios": ur.rol.puede_gestionar_usuarios,
+                        "puede_eliminar_usuarios": ur.rol.puede_gestionar_usuarios,
+
+                        # ==== Roles ====
+                        "puede_ver_roles": ur.rol.puede_gestionar_roles,
+                        "puede_crear_roles": ur.rol.puede_gestionar_roles,
+                        "puede_editar_roles": ur.rol.puede_gestionar_roles,
+                        "puede_eliminar_roles": ur.rol.puede_gestionar_roles,
+                        "puede_asignar_roles": ur.rol.puede_gestionar_roles,
+
+                        # ==== Agentes (por ahora puedes ligarlos a roles o usuarios, según tu lógica) ====
+                        "puede_ver_agentes": ur.rol.puede_gestionar_usuarios,
+                        "puede_crear_agentes": ur.rol.puede_gestionar_usuarios,
+                        "puede_editar_agentes": ur.rol.puede_gestionar_usuarios,
+                        "puede_eliminar_agentes": ur.rol.puede_gestionar_usuarios,
+
+                        # ==== Conversaciones / métricas / exportación ====
+                        "puede_ver_conversaciones": ur.rol.puede_ver_todas_metricas,
+                        "puede_ver_todas_conversaciones": ur.rol.puede_ver_todas_metricas,
+                        "puede_exportar_conversaciones": ur.rol.puede_exportar_datos_globales,
+
+                        # ==== Departamentos ====
+                        "puede_ver_departamentos": ur.rol.puede_gestionar_departamentos,
+                        "puede_crear_departamentos": ur.rol.puede_gestionar_departamentos,
+                        "puede_editar_departamentos": ur.rol.puede_gestionar_departamentos,
+                        "puede_eliminar_departamentos": ur.rol.puede_gestionar_departamentos,
+
+                        # ==== Contenido (si aún no tienes columnas, de momento en False) ====
+                        "puede_ver_contenido": False,
+                        "puede_crear_contenido": False,
+                        "puede_editar_contenido": False,
+                        "puede_eliminar_contenido": False,
+
+                        # ==== Sistema ====
+                        "puede_ver_logs": ur.rol.puede_configurar_sistema,
                         "puede_configurar_sistema": ur.rol.puede_configurar_sistema,
                         "puede_gestionar_api_keys": ur.rol.puede_gestionar_api_keys,
-                        "puede_exportar_datos": ur.rol.puede_exportar_datos,
-                        "puede_ver_estadisticas": ur.rol.puede_ver_estadisticas
+                        "puede_exportar_datos": ur.rol.puede_exportar_datos_globales,
+                        "puede_ver_estadisticas": ur.rol.puede_ver_todas_metricas,
                     }
+
                 })
             
             # Información del departamento (si existe)
@@ -1193,3 +1179,35 @@ async def listar_usuarios_completo(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al listar usuarios: {str(e)}"
         )
+    
+# ------------------------------------------------------------------------
+
+@router.get("/{id_usuario}", status_code=status.HTTP_200_OK)
+async def obtener_usuario(
+    id_usuario: int,
+    db: Session = Depends(get_db)
+):
+    """🔍 Obtener usuario por ID"""
+    repo = UsuarioRepository(db)
+    
+    try:
+        usuario = repo.get_by_id(id_usuario, include_persona=True)
+        
+        return {
+            "id_usuario": usuario.id_usuario,
+            "username": usuario.username,
+            "email": usuario.email,
+            "estado": usuario.estado,
+            "requiere_cambio_password": usuario.requiere_cambio_password,
+            "intentos_fallidos": usuario.intentos_fallidos,
+            "ultimo_acceso": usuario.ultimo_acceso.isoformat() if usuario.ultimo_acceso else None,
+            "fecha_creacion": usuario.fecha_creacion.isoformat() if usuario.fecha_creacion else None,
+            "persona": {
+                "id_persona": usuario.persona.id_persona,
+                "nombre": usuario.persona.nombre,
+                "apellido": usuario.persona.apellido,
+                "email": usuario.persona.email
+            } if usuario.persona else None
+        }
+    except NotFoundException:
+        raise
