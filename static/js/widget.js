@@ -1,25 +1,85 @@
 // static/js/widget.js
+
+// 🔥 PROTECCIÓN CONTRA EXTENSIONES QUE INYECTAN CÓDIGO (Monica, Sider, etc.)
+(function() {
+    'use strict';
+    
+    // Bloquear errores de extensiones
+    const originalError = console.error;
+    console.error = function(...args) {
+        const msg = args.join(' ');
+        // Ignorar errores conocidos de extensiones de IA
+        if (msg.includes('Cannot determine language') || 
+            msg.includes('content-all.js') ||
+            msg.includes('extension://')) {
+            return;
+        }
+        originalError.apply(console, args);
+    };
+    
+    // Capturar errores globales
+    window.addEventListener('error', function(e) {
+        if (e.filename && (
+            e.filename.includes('extension://') || 
+            e.filename.includes('content-all.js') ||
+            e.filename.includes('monica') ||
+            e.filename.includes('sider')
+        )) {
+            e.preventDefault();
+            e.stopPropagation();
+            return true;
+        }
+    }, true);
+    
+    // Capturar promesas rechazadas
+    window.addEventListener('unhandledrejection', function(e) {
+        if (e.reason && e.reason.stack && (
+            e.reason.stack.includes('content-all.js') ||
+            e.reason.stack.includes('extension://') ||
+            e.reason.stack.includes('monica') ||
+            e.reason.stack.includes('sider')
+        )) {
+            e.preventDefault();
+            e.stopPropagation();
+            return true;
+        }
+    }, true);
+    
+    console.log('✅ Protección contra extensiones activada');
+})();
+
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
 // Variables globales
 let speechSynthesis = window.speechSynthesis;
 let availableVoices = [];
 
+// 🔥 Variables para Speech Recognition
+let recognition = null;
+let isListening = false;
+let startTimeout = null; // 🔥 NUEVO: timeout de seguridad
+
 function initVoices() {
     availableVoices = speechSynthesis.getVoices();
-    console.log('Voces disponibles:', availableVoices.map(v => `${v.name} (${v.lang})`));
+    console.log('Voces disponibles:', availableVoices.length, availableVoices.map(v => `${v.name} (${v.lang})`));
 }
 
+// Intentar cargar voces múltiples veces
 speechSynthesis.onvoiceschanged = initVoices;
 initVoices();
+setTimeout(initVoices, 100);
+setTimeout(initVoices, 500);
 
-let chatButton, chatContainer, closeChat, chatMessages, chatInput, sendButton, typingIndicator, agentSelector, agentCards, selectedAgentInfo, agentDisplayName, clearAgentBtn, toggleAgentsBtn, voiceToggleBtn;
+let chatButton, chatContainer, closeChat, chatMessages, chatInput, sendButton, typingIndicator, agentSelector, agentCards, selectedAgentInfo, agentDisplayName, clearAgentBtn, toggleAgentsBtn, voiceToggleBtn, micButton;
 let selectedAgentId = null;
 let selectedAgentName = null;
 let voiceEnabled = false;
 
-// 🔥 NUEVA variable para controlar streaming
+// 🔥 Variable para controlar streaming
 let currentStreamController = null;
+
+// 🔥 Variable para evitar llamadas múltiples
+let isStarting = false;
 
 // ==================== INICIALIZACIÓN ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -37,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearAgentBtn = document.getElementById('clear-agent-btn');
     toggleAgentsBtn = document.getElementById('toggle-agents-btn');
     voiceToggleBtn = document.getElementById('voice-toggle-btn');
+    micButton = document.getElementById('mic-button');
 
     chatButton.addEventListener('click', () => {
         chatContainer.classList.add('active');
@@ -83,7 +144,346 @@ document.addEventListener('DOMContentLoaded', () => {
     chatContainer.addEventListener('click', (e) => {
         e.stopPropagation();
     });
+
+    // 🔥 NUEVO: Inicializar Speech Recognition
+    initSpeechRecognition();
 });
+
+// ==================== 🔥 SPEECH RECOGNITION ====================
+function initSpeechRecognition() {
+    console.log('🔧 [INIT] Iniciando configuración de Speech Recognition...');
+    
+    if (!micButton) {
+        console.error('❌ [INIT] Botón de micrófono NO encontrado');
+        return;
+    }
+    if (!chatInput) {
+        console.error('❌ [INIT] Input de chat NO encontrado');
+        return;
+    }
+    
+    console.log('✅ [INIT] Elementos DOM encontrados correctamente');
+
+    // Verificar soporte del navegador
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    console.log('🔍 [INIT] window.SpeechRecognition:', typeof window.SpeechRecognition);
+    console.log('🔍 [INIT] window.webkitSpeechRecognition:', typeof window.webkitSpeechRecognition);
+    
+    if (!SpeechRecognition) {
+        console.error('❌ [INIT] Speech Recognition NO soportado');
+        console.log('🌐 [INIT] Navegador:', navigator.userAgent);
+        micButton.style.opacity = '0.5';
+        micButton.title = 'Speech Recognition no disponible en este navegador';
+        micButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            alert('❌ Tu navegador no soporta reconocimiento de voz. Usa Chrome, Edge o Safari.');
+        });
+        return;
+    }
+
+    console.log('✅ [INIT] SpeechRecognition disponible');
+    
+    try {
+        recognition = new SpeechRecognition();
+        console.log('✅ [INIT] Instancia de SpeechRecognition creada');
+    } catch (error) {
+        console.error('❌ [INIT] Error al crear instancia:', error);
+        return;
+    }
+    
+    // Configuración
+    recognition.lang = 'es-ES';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    console.log('⚙️ [CONFIG] Configuración aplicada:', {
+        lang: recognition.lang,
+        continuous: recognition.continuous,
+        interimResults: recognition.interimResults,
+        maxAlternatives: recognition.maxAlternatives
+    });
+
+    console.log('✅ [INIT] Speech Recognition inicializado correctamente');
+
+    // Eventos
+    recognition.onstart = function() {
+        console.log('🎤 [EVENT] onstart - Micrófono activado');
+        console.log('⏰ [EVENT] Timestamp:', new Date().toLocaleTimeString());
+        
+        // 🔥 Limpiar timeout
+        if (startTimeout) {
+            clearTimeout(startTimeout);
+            startTimeout = null;
+        }
+        
+        isListening = true;
+        isStarting = false;
+        micButton.style.color = '#e74c3c';
+        micButton.style.backgroundColor = '#ffe6e6';
+        micButton.style.transform = 'scale(1.1)';
+        
+        // Añadir feedback visual en el chat
+        const feedbackDiv = document.createElement('div');
+        feedbackDiv.id = 'voice-feedback';
+        feedbackDiv.style.cssText = 'text-align: center; padding: 10px; color: #e74c3c; font-size: 12px; animation: pulse 1s infinite;';
+        feedbackDiv.innerHTML = '🎤 Escuchando... Habla ahora';
+        chatMessages.appendChild(feedbackDiv);
+        scrollToBottom();
+    };
+
+    recognition.onspeechstart = function() {
+        console.log('🗣️ [EVENT] onspeechstart - Voz detectada!');
+    };
+
+    recognition.onspeechend = function() {
+        console.log('🔇 [EVENT] onspeechend - Voz terminada');
+    };
+
+    recognition.onsoundstart = function() {
+        console.log('🔊 [EVENT] onsoundstart - Sonido detectado');
+    };
+
+    recognition.onsoundend = function() {
+        console.log('🔈 [EVENT] onsoundend - Sonido terminado');
+    };
+
+    recognition.onaudiostart = function() {
+        console.log('🎵 [EVENT] onaudiostart - Audio iniciado');
+    };
+
+    recognition.onaudioend = function() {
+        console.log('🎵 [EVENT] onaudioend - Audio terminado');
+    };
+
+    recognition.onresult = function(event) {
+        console.log('📝 [EVENT] onresult - Resultado recibido!');
+        console.log('📊 [EVENT] Número de resultados:', event.results.length);
+        console.log('📊 [EVENT] Evento completo:', event);
+        
+        try {
+            const transcript = event.results[0][0].transcript;
+            const confidence = event.results[0][0].confidence;
+            console.log('✅ [RESULT] Transcripción:', transcript);
+            console.log('🎯 [RESULT] Confianza:', (confidence * 100).toFixed(1) + '%');
+            
+            // Remover feedback
+            const feedback = document.getElementById('voice-feedback');
+            if (feedback) {
+                feedback.remove();
+                console.log('🗑️ [UI] Feedback removido');
+            }
+            
+            chatInput.value = transcript;
+            chatInput.focus();
+            console.log('✅ [UI] Texto insertado en input');
+        } catch (error) {
+            console.error('❌ [RESULT] Error procesando resultado:', error);
+        }
+    };
+
+    recognition.onnomatch = function() {
+        console.warn('⚠️ [EVENT] onnomatch - No se reconoció lo que dijiste');
+    };
+
+    recognition.onend = function() {
+        console.log('🎤 [EVENT] onend - Reconocimiento terminado');
+        console.log('⏰ [EVENT] Timestamp:', new Date().toLocaleTimeString());
+        isListening = false;
+        isStarting = false; // 🔥 Reset flag
+        micButton.style.color = '';
+        micButton.style.backgroundColor = '';
+        micButton.style.transform = '';
+        
+        // Remover feedback si existe
+        const feedback = document.getElementById('voice-feedback');
+        if (feedback) {
+            feedback.remove();
+            console.log('🗑️ [UI] Feedback removido en onend');
+        }
+    };
+
+    recognition.onerror = function(event) {
+        console.error('❌ [EVENT] onerror - Error detectado');
+        console.error('❌ [ERROR] Tipo:', event.error);
+        console.error('❌ [ERROR] Mensaje:', event.message);
+        console.error('❌ [ERROR] Evento completo:', event);
+        console.log('⏰ [ERROR] Timestamp:', new Date().toLocaleTimeString());
+        
+        isListening = false;
+        isStarting = false; // 🔥 Reset flag
+        micButton.style.color = '';
+        micButton.style.backgroundColor = '';
+        micButton.style.transform = '';
+        
+        // Remover feedback
+        const feedback = document.getElementById('voice-feedback');
+        if (feedback) feedback.remove();
+
+        let errorMsg = '';
+        let errorIcon = '❌';
+        
+        switch(event.error) {
+            case 'not-allowed':
+            case 'permission-denied':
+                errorIcon = '🔒';
+                errorMsg = 'Permiso denegado.\n\n' +
+                          '📋 PASOS PARA HABILITAR:\n' +
+                          '1. Haz clic en el icono 🔒 o ⓘ en la barra de direcciones\n' +
+                          '2. Busca "Micrófono" en permisos\n' +
+                          '3. Cambia a "Permitir"\n' +
+                          '4. Recarga la página (F5)';
+                break;
+            case 'no-speech':
+                errorIcon = '🤫';
+                errorMsg = 'No detecté ninguna voz. Intenta:\n• Hablar más cerca del micrófono\n• Verificar que el micrófono esté activo\n• Hablar más alto';
+                break;
+            case 'audio-capture':
+                errorIcon = '🎤';
+                errorMsg = 'No se detectó micrófono.\n• Conecta un micrófono\n• Verifica que esté seleccionado en configuración del sistema';
+                break;
+            case 'network':
+                errorIcon = '🌐';
+                errorMsg = 'Error de red. Verifica tu conexión a internet.';
+                break;
+            case 'aborted':
+                console.log('ℹ️ [INFO] Reconocimiento abortado por el usuario');
+                return;
+            default:
+                errorMsg = `Error desconocido: ${event.error}`;
+        }
+        
+        addBotMessage(`${errorIcon} ${errorMsg}`);
+    };
+
+    // Event listener para el botón
+    micButton.addEventListener('click', async function(e) {
+        console.log('🖱️ [CLICK] Botón de micrófono clickeado');
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('📊 [STATE] isListening:', isListening);
+        console.log('📊 [STATE] isStarting:', isStarting);
+        console.log('📊 [STATE] recognition:', recognition ? 'Existe' : 'No existe');
+        
+        // 🔥 Evitar clics múltiples
+        if (isStarting) {
+            console.log('⚠️ [CLICK] Ya se está iniciando, ignorando clic...');
+            return;
+        }
+        
+        if (isListening) {
+            console.log('🛑 [ACTION] Deteniendo reconocimiento...');
+            try {
+                recognition.stop();
+                console.log('✅ [ACTION] stop() ejecutado');
+            } catch (error) {
+                console.error('❌ [ACTION] Error al detener:', error);
+            }
+        } else {
+            isStarting = true; // 🔥 Marcar que está iniciando
+            console.log('🎤 [ACTION] Intentando iniciar reconocimiento...');
+            
+            // 🔥 Solicitar permisos explícitamente con getUserMedia
+            try {
+                console.log('🎤 [PERMISSIONS] Solicitando permisos con getUserMedia...');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log('✅ [PERMISSIONS] Permisos obtenidos!');
+                
+                // Detener el stream inmediatamente (solo lo usamos para obtener permisos)
+                stream.getTracks().forEach(track => track.stop());
+                console.log('🔇 [PERMISSIONS] Stream cerrado');
+                
+                // 🔥 Pequeña pausa para evitar race condition
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Ahora sí iniciar el reconocimiento
+                startRecognition();
+                
+            } catch (permError) {
+                isStarting = false; // 🔥 Reset flag
+                console.error('❌ [PERMISSIONS] Error obteniendo permisos:', permError);
+                
+                if (permError.name === 'NotAllowedError' || permError.name === 'PermissionDeniedError') {
+                    addBotMessage('🔒 Permisos de micrófono bloqueados.\n\n' +
+                          '📋 Para habilitarlos:\n' +
+                          '1. Haz clic en el 🔒 en la barra de direcciones\n' +
+                          '2. Busca "Micrófono"\n' +
+                          '3. Selecciona "Permitir"\n' +
+                          '4. Recarga la página (F5)');
+                } else if (permError.name === 'NotFoundError') {
+                    addBotMessage('🎤 No se encontró ningún micrófono.\n\nVerifica que:\n• Tu micrófono esté conectado\n• Esté habilitado en la configuración del sistema');
+                } else {
+                    addBotMessage('❌ Error al acceder al micrófono: ' + permError.message);
+                }
+            }
+        }
+    });
+    
+    console.log('✅ [INIT] Event listeners configurados');
+}
+
+function startRecognition() {
+    console.log('🚀 [START] Intentando iniciar reconocimiento...');
+    console.log('📊 [START] Estado actual - isListening:', isListening);
+    console.log('📊 [START] Estado actual - isStarting:', isStarting);
+    console.log('📊 [START] recognition existe:', !!recognition);
+    
+    // 🔥 No iniciar si ya está escuchando
+    if (isListening) {
+        console.log('⚠️ [START] Ya está escuchando, abortando...');
+        isStarting = false;
+        return;
+    }
+    
+    try {
+        recognition.start();
+        console.log('✅ [START] recognition.start() ejecutado sin errores');
+        
+        // 🔥 NUEVO: Timeout de seguridad - si no hay evento onstart en 3 segundos
+        startTimeout = setTimeout(() => {
+            console.error('⏰ [TIMEOUT] No se recibió evento onstart en 3 segundos');
+            console.log('🔍 [TIMEOUT] Estado - isListening:', isListening, 'isStarting:', isStarting);
+            
+            isStarting = false;
+            isListening = false;
+            
+            // Intentar detener por si acaso
+            try {
+                recognition.stop();
+            } catch (e) {
+                console.log('ℹ️ [TIMEOUT] No se pudo detener (ya estaba detenido)');
+            }
+            
+            addBotMessage('⏰ El micrófono no respondió.\n\n' +
+                         'Posibles causas:\n' +
+                         '• Otro programa está usando el micrófono\n' +
+                         '• El micrófono está deshabilitado en Windows\n' +
+                         '• Intenta cerrar otras aplicaciones (Zoom, Teams, etc.)\n\n' +
+                         'Prueba recargar la página (F5)');
+        }, 3000);
+        
+    } catch (error) {
+        console.error('❌ [START] Error al iniciar:', error);
+        console.error('❌ [START] Error.name:', error.name);
+        console.error('❌ [START] Error.message:', error.message);
+        
+        // 🔥 Limpiar timeout
+        if (startTimeout) {
+            clearTimeout(startTimeout);
+            startTimeout = null;
+        }
+        
+        isStarting = false;
+        
+        if (error.message && error.message.includes('already started')) {
+            console.log('⚠️ [START] Ya estaba iniciado, esperando a que termine...');
+        } else {
+            addBotMessage('❌ No se pudo iniciar el reconocimiento de voz.\n\nIntenta recargar la página (F5)');
+        }
+    }
+}
 
 // ==================== GESTIÓN DE VOZ ====================
 function toggleVoice() {
@@ -91,10 +491,20 @@ function toggleVoice() {
     voiceToggleBtn.classList.toggle('active', voiceEnabled);
     
     if (voiceEnabled) {
-        addBotMessage('Voz activada. Ahora leeré en voz alta mis respuestas.');
+        // Cargar voces si no están disponibles
+        if (availableVoices.length === 0) {
+            availableVoices = speechSynthesis.getVoices();
+        }
+        
+        addBotMessage(`🔊 Voz activada. ${availableVoices.length} voces disponibles.`);
+        
+        // Prueba de voz
+        setTimeout(() => {
+            speakText('Hola, voz de prueba activada');
+        }, 500);
     } else {
         speechSynthesis.cancel();
-        addBotMessage('Voz desactivada.');
+        addBotMessage('🔇 Voz desactivada.');
     }
 }
 
@@ -104,6 +514,7 @@ function speakText(text) {
     const cleanText = text
         .replace(/<[^>]*>/g, '')
         .replace(/https?:\/\/[^\s]+/g, '')
+        .replace(/🔊|🔇|🎤|📝|✅|❌|⚠️|🔒|🤫|🌐/g, '')
         .trim();
 
     if (!cleanText) return;
@@ -114,44 +525,30 @@ function speakText(text) {
 function speakWithBrowserTTS(text) {
     speechSynthesis.cancel();
 
+    // Cargar voces si están vacías
+    if (availableVoices.length === 0) {
+        availableVoices = speechSynthesis.getVoices();
+    }
+
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'es-ES';     
-    utterance.rate = 1.1;
-    utterance.pitch = 1.3;
-    utterance.volume = 1;
+    utterance.lang = 'es-ES';
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
 
-    const preferredVoiceNames = [
-        "Microsoft Helena",
-        "Google español",   
-        "Mónica",
-        "Paulina",
-        "Microsoft Laura",
-        "Diego"
-    ];
-    let voice = availableVoices.find(v =>
-        v.lang.startsWith('es') &&
-        (
-            v.name.toLowerCase().includes('diego') ||
-            v.name.toLowerCase().includes('jorge') ||
-            v.name.toLowerCase().includes('pablo') ||
-            v.name.toLowerCase().includes('raul') ||
-            v.name.toLowerCase().includes('male')
-        )
-    );
-
-    if (!voice) {
-        voice = availableVoices.find(v => 
-            preferredVoiceNames.some(name => v.name.includes(name))
-        );
-    }
-
-    if (!voice) {
-        voice = availableVoices.find(v => v.lang.startsWith('es'));
-    }
+    // Buscar voz en español
+    let voice = availableVoices.find(v => v.lang.startsWith('es'));
 
     if (voice) {
         utterance.voice = voice;
+        console.log('🔊 Usando voz:', voice.name);
+    } else {
+        console.warn('⚠️ No se encontró voz en español, usando voz predeterminada');
     }
+
+    utterance.onerror = function(event) {
+        console.error('❌ Error TTS:', event.error);
+    };
 
     speechSynthesis.speak(utterance);
 }
@@ -262,9 +659,8 @@ async function sendMessage() {
     sendButton.disabled = true;
     typingIndicator.classList.add('active');
 
-    // 🔥 Configuración de reintentos
     const MAX_RETRIES = 2;
-    const TIMEOUT_MS = 60000; // 60 segundos
+    const TIMEOUT_MS = 60000;
     
     let attempt = 0;
     let success = false;
@@ -276,7 +672,7 @@ async function sendMessage() {
             if (attempt > 1) {
                 console.log(`🔄 Reintento ${attempt}/${MAX_RETRIES + 1}...`);
                 addBotMessage(`⚠️ Reintentando conexión (${attempt}/${MAX_RETRIES + 1})...`);
-                await sleep(1000 * attempt); // Backoff: 1s, 2s, 3s
+                await sleep(1000 * attempt);
             }
 
             let endpoint, body;
@@ -295,7 +691,6 @@ async function sendMessage() {
                 };
             }
 
-            // 🔥 NUEVO: Crear AbortController con timeout
             currentStreamController = new AbortController();
             const timeoutId = setTimeout(() => {
                 console.warn('⏱️ Timeout alcanzado, abortando...');
@@ -310,25 +705,21 @@ async function sendMessage() {
                     signal: currentStreamController.signal
                 });
 
-                // Limpiar timeout si la respuesta llega
                 clearTimeout(timeoutId);
 
                 if (!response.ok) {
                     throw new Error(`Error del servidor: ${response.status}`);
                 }
 
-                // 🔥 Procesar stream
                 await processStream(response);
                 
-                success = true; // ✅ Éxito
+                success = true;
                 console.log('✅ Stream completado exitosamente');
 
             } catch (fetchError) {
                 clearTimeout(timeoutId);
                 
-                // Si es abort por timeout o usuario
                 if (fetchError.name === 'AbortError') {
-                    // Verificar si fue timeout o cancelación manual
                     if (currentStreamController.signal.aborted) {
                         throw new Error('Timeout: El servidor tardó demasiado en responder');
                     } else {
@@ -336,13 +727,12 @@ async function sendMessage() {
                     }
                 }
                 
-                throw fetchError; // Re-lanzar otros errores
+                throw fetchError;
             }
 
         } catch (error) {
             console.error(`❌ Intento ${attempt} falló:`, error.message);
 
-            // Si es el último intento, mostrar error final
             if (attempt > MAX_RETRIES) {
                 typingIndicator.classList.remove('active');
                 
@@ -352,7 +742,7 @@ async function sendMessage() {
                     errorMsg = '⏱️ El servidor está tardando demasiado. Por favor, intenta con una pregunta más corta.';
                 } else if (error.message.includes('Cancelado')) {
                     console.log('Stream cancelado por el usuario');
-                    break; // No mostrar error si el usuario canceló
+                    break;
                 } else if (error.message.includes('Failed to fetch')) {
                     errorMsg = '🔌 No hay conexión con el servidor. Verifica tu conexión a internet.';
                 }
@@ -360,7 +750,6 @@ async function sendMessage() {
                 addBotMessage(errorMsg);
             }
             
-            // Si no es el último intento, continuar el loop
             if (attempt <= MAX_RETRIES) {
                 continue;
             }
@@ -369,13 +758,11 @@ async function sendMessage() {
         }
     }
 
-    // Limpiar estado final
     typingIndicator.classList.remove('active');
     sendButton.disabled = false;
     chatInput.focus();
 }
 
-// 🔥 NUEVA: Función helper para sleep
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -390,11 +777,9 @@ async function processStream(response) {
     let buffer = '';
     
     try {
-        // 🔥 NUEVO: Heartbeat detection
         let lastDataTime = Date.now();
-        const HEARTBEAT_TIMEOUT = 30000; // 30 segundos sin datos
+        const HEARTBEAT_TIMEOUT = 30000;
         
-        // 🔥 NUEVO: Verificar heartbeat periódicamente
         const heartbeatCheck = setInterval(() => {
             const timeSinceLastData = Date.now() - lastDataTime;
             if (timeSinceLastData > HEARTBEAT_TIMEOUT) {
@@ -403,7 +788,7 @@ async function processStream(response) {
                 reader.cancel();
                 throw new Error('Conexión perdida: sin respuesta del servidor');
             }
-        }, 5000); // Revisar cada 5 segundos
+        }, 5000);
         
         while (true) {
             const { done, value } = await reader.read();
@@ -414,13 +799,9 @@ async function processStream(response) {
                 break;
             }
             
-            // 🔥 Actualizar timestamp
             lastDataTime = Date.now();
-            
-            // Decodificar chunk
             buffer += decoder.decode(value, { stream: true });
             
-            // Procesar líneas completas
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
             
@@ -498,7 +879,6 @@ async function processStream(response) {
             }
         }
         
-        // Procesar buffer final
         if (buffer.trim() && buffer.startsWith('data: ')) {
             try {
                 const jsonStr = buffer.substring(6).trim();
@@ -515,7 +895,7 @@ async function processStream(response) {
     } catch (error) {
         console.error('❌ Error en stream:', error);
         typingIndicator.classList.remove('active');
-        throw error; // Re-lanzar para que sendMessage() lo maneje
+        throw error;
     } finally {
         typingIndicator.classList.remove('active');
     }

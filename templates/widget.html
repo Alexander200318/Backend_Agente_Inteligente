@@ -91,68 +91,44 @@
     </div>
 
     <script src="/static/js/widget.js"></script>
-    <script>
-        // Reconocimiento de voz
-        window.addEventListener('load', function() {
-            const micButton = document.getElementById('mic-button');
-            const chatInput = document.getElementById('chat-input');
-            
-            if (!micButton || !chatInput) return;
-            
-            let recognition = null;
-            let isListening = false;
-
-            if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                recognition = new SpeechRecognition();
-                recognition.lang = 'es-ES';
-                recognition.continuous = false;
-                recognition.interimResults = false;
-
-                recognition.onstart = function() {
-                    isListening = true;
-                    micButton.style.color = '#e74c3c';
-                    micButton.style.backgroundColor = '#ffe6e6';
-                };
-
-                recognition.onresult = function(event) {
-                    const transcript = event.results[0][0].transcript;
-                    chatInput.value = transcript;
-                };
-
-                recognition.onend = function() {
-                    isListening = false;
-                    micButton.style.color = '';
-                    micButton.style.backgroundColor = '';
-                };
-
-                recognition.onerror = function(event) {
-                    console.error('Error de reconocimiento:', event.error);
-                    if (event.error === 'not-allowed') {
-                        alert('Debes permitir el acceso al micrófono en la configuración de tu navegador');
-                    } else {
-                        alert('Error: ' + event.error);
-                    }
-                    isListening = false;
-                    micButton.style.color = '';
-                    micButton.style.backgroundColor = '';
-                };
-
-                micButton.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    if (isListening) {
-                        recognition.stop();
-                    } else {
-                        recognition.start();
-                    }
-                });
-            } else {
-                micButton.style.display = 'none';
-                console.error('Reconocimiento de voz no soportado');
+    
+    <style>
+        /* Animación para el feedback de voz */
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
             }
-        });
-    </script>
+            50% {
+                opacity: 0.6;
+                transform: scale(1.05);
+            }
+        }
+        
+        /* Estilos para el botón del micrófono */
+        #mic-button {
+            background: transparent;
+            border: 2px solid #e9ecef;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #495057;
+        }
+        
+        #mic-button:hover {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+            transform: scale(1.05);
+        }
+        
+        #mic-button:active {
+            transform: scale(0.95);
+        }
+    </style>
 </body>
 </html>
