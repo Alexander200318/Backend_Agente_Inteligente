@@ -10,6 +10,10 @@ class AgenteVirtualBase(BaseModel):
     id_departamento: Optional[int] = None
     descripcion: Optional[str] = None
     
+    # Auditoría
+    creado_por: Optional[int] = None
+    actualizado_por: Optional[int] = None
+    
     # Apariencia
     avatar_url: Optional[str] = None
     color_tema: str = Field("#3B82F6", max_length=7)
@@ -60,6 +64,10 @@ class AgenteVirtualUpdate(BaseModel):
     area_especialidad: Optional[str] = None
     id_departamento: Optional[int] = None
     descripcion: Optional[str] = None
+    
+    creado_por: Optional[int] = None
+    actualizado_por: Optional[int] = None
+
     avatar_url: Optional[str] = None
     color_tema: Optional[str] = None
     icono: Optional[str] = None
@@ -86,6 +94,9 @@ class AgenteVirtualResponse(AgenteVirtualBase):
     activo: bool
     fecha_creacion: datetime
     fecha_actualizacion: Optional[datetime]
+    
+    creador_nombre: Optional[str] = None
+    actualizador_nombre: Optional[str] = None
     
     class Config:
         from_attributes = True
