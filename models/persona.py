@@ -60,7 +60,13 @@ class Persona(Base):
     
     # Auditoría
     fecha_registro = Column(DateTime, server_default=func.current_timestamp())
-    fecha_actualizacion = Column(DateTime, onupdate=func.current_timestamp())
+    
+    fecha_actualizacion = Column(
+        DateTime, 
+        default=None, 
+        onupdate=func.now(),  # 👈 Se actualiza automáticamente
+        nullable=True
+    )
     
     # Relationships
     departamento = relationship("Departamento", back_populates="personas", foreign_keys=[id_departamento])

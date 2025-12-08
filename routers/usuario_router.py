@@ -772,6 +772,7 @@ async def obtener_estadisticas(db: Session = Depends(get_db)):
 
 
 
+# routers/usuario_router.py
 @router.put("/{id_usuario}", status_code=status.HTTP_200_OK)
 async def actualizar_usuario(
     id_usuario: int,
@@ -785,6 +786,10 @@ async def actualizar_usuario(
     
     try:
         usuario_actualizado = repo.update(id_usuario, usuario_data)
+        
+        # ✅ FORZAR ACTUALIZACIÓN
+        usuario_actualizado.fecha_actualizacion = datetime.now()
+        db.commit()
         
         log_security_event(
             "USER_UPDATED",
@@ -800,7 +805,8 @@ async def actualizar_usuario(
                 "id_usuario": usuario_actualizado.id_usuario,
                 "username": usuario_actualizado.username,
                 "email": usuario_actualizado.email,
-                "estado": usuario_actualizado.estado
+                "estado": usuario_actualizado.estado,
+                "fecha_actualizacion": usuario_actualizado.fecha_actualizacion
             }
         }
     except NotFoundException:

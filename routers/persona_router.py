@@ -1,7 +1,9 @@
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
 from database.database import get_db
+from models import Persona
 from services.persona_service import PersonaService
 from schemas.persona_schemas import (
     PersonaResponse, 
@@ -97,10 +99,36 @@ def obtener_persona(id_persona: int, db: Session = Depends(get_db)):
 # =======================
 #   6) ACTUALIZAR
 # =======================
+# routers/persona_router.py
 @router.put("/{id_persona}", response_model=PersonaResponse)
-def actualizar_persona(id_persona: int, persona: PersonaUpdate, db: Session = Depends(get_db)):
-    service = PersonaService(db)
-    return service.actualizar_persona(id_persona, persona)
+def actualizar_persona(
+    id_persona: int,
+    persona_data: PersonaUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar persona"""
+    persona = db.query(Persona).filter(Persona.id_persona == id_persona).first()
+    
+    if not persona:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Persona con ID {id_persona} no encontrada"
+        )
+    
+    # Actualizar campos
+    update_data = persona_data.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(persona, field, value)
+    
+    # ✅ FORZAR ACTUALIZACIÓN DE fecha_actualizacion
+    persona.fecha_actualizacion = datetime.now()
+    
+    db.commit()
+    db.refresh(persona)
+    
+    return persona
+
+
 
 
 @router.patch("/{id_persona}/estado", response_model=PersonaResponse)

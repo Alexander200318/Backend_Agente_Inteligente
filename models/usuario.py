@@ -44,7 +44,14 @@ class Usuario(Base):
             nullable=False,
             server_default=func.now()   # la pone la BD al crear el registro
         )
-    fecha_actualizacion = Column(DateTime, onupdate=func.current_timestamp())
+    
+    fecha_actualizacion = Column(
+        DateTime, 
+        default=None, 
+        onupdate=func.now(),
+        nullable=True
+    )
+
     creado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'), nullable=True)
     
     # Relationships
