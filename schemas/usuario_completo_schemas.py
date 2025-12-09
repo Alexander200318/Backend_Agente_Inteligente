@@ -18,6 +18,7 @@ class UsuarioCompletoCreate(BaseModel):
     email: str = Field(..., description="Email del usuario")
     password: str = Field(..., min_length=8, max_length=100, description="Contraseña del usuario")
     estado: EstadoUsuarioEnum = EstadoUsuarioEnum.activo
+    creado_por: Optional[int] = Field(None, description="ID del usuario que crea este registro")
     
     # Datos de la persona (embebido)
     persona: PersonaCreate = Field(..., description="Información personal del usuario")

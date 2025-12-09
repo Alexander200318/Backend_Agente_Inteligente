@@ -508,6 +508,7 @@ async def crear_usuario_completo(
             password=password_hash,
             estado=usuario_data.estado,
             id_persona=nueva_persona.id_persona,
+            creado_por=usuario_data.creado_por,
             requiere_cambio_password=True,
             intentos_fallidos=0,
             fecha_creacion=datetime.now()
