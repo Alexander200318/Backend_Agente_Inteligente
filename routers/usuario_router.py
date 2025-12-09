@@ -772,7 +772,7 @@ async def obtener_estadisticas(db: Session = Depends(get_db)):
 
 
 
-# routers/usuario_router.py
+
 @router.put("/{id_usuario}", status_code=status.HTTP_200_OK)
 async def actualizar_usuario(
     id_usuario: int,
@@ -786,11 +786,7 @@ async def actualizar_usuario(
     
     try:
         usuario_actualizado = repo.update(id_usuario, usuario_data)
-        
-        # ✅ FORZAR ACTUALIZACIÓN
-        usuario_actualizado.fecha_actualizacion = datetime.now()
-        db.commit()
-        
+   
         log_security_event(
             "USER_UPDATED",
             usuario_actualizado.username,
@@ -811,6 +807,15 @@ async def actualizar_usuario(
         }
     except NotFoundException:
         raise
+    except Exception as e:
+        db.rollback()  # ✅ AGREGAR: Rollback explícito
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al actualizar usuario"
+        )
+
+
+
 
 
 @router.delete("/{id_usuario}", status_code=status.HTTP_200_OK)
@@ -1178,6 +1183,7 @@ async def listar_usuarios_completo(
         }
         
     except Exception as e:
+        db.rollback()
         print(f"❌ Error listando usuarios completos: {e}")
         import traceback
         traceback.print_exc()

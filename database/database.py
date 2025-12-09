@@ -27,10 +27,13 @@ Base = declarative_base()
 def get_db():
     """
     Dependency para obtener sesión de base de datos.
-    Se usa con FastAPI Depends.
     """
     db = SessionLocal()
     try:
         yield db
+        db.commit()  
+    except Exception:
+        db.rollback()  
+        raise
     finally:
         db.close()

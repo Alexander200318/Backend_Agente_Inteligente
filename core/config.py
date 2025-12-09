@@ -135,5 +135,13 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = True
 
+    # ============================================
+    #   SERVICIO DE ASEGURAMIENTO / FENIX
+    # ============================================
+    ASEGURAMIENTO_BASE_URL: str = "http://apps.tecazuay.edu.ec:9093/aseguramiento/api/fenix"
 # Instancia única de configuración
+
+
 settings = Settings()
+
+

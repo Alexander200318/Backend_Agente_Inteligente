@@ -182,7 +182,8 @@ from routers import (
     embeddings_router,
     persona_router,
     widget_router,
-    usuario_rol_router
+    usuario_rol_router,
+    aseguramiento_router
 )
 
 # Incluir routers de API con prefix /api/v1
@@ -204,7 +205,7 @@ app.include_router(agentes_router.router, prefix="/api/v1")
 app.include_router(embeddings_router.router, prefix="/api/v1")
 app.include_router(persona_router.router, prefix="/api/v1")
 app.include_router(usuario_rol_router.router, prefix="/api/v1")
-
+app.include_router(aseguramiento_router.router, prefix="/api/v1")
 # Incluir router del widget SIN prefix (acceso directo a /widget y /admin)
 app.include_router(widget_router.router, tags=["Widget"])
 
