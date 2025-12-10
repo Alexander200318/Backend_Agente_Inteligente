@@ -44,6 +44,29 @@ class UsuarioUpdate(BaseModel):
     email: Optional[EmailStr] = None
     password: Optional[str] = Field(None, min_length=8, max_length=100)
     estado: Optional[EstadoUsuarioEnum] = None
+    
+    @validator('username')
+    def validar_username(cls, v):
+        if v is not None:
+            if not v.strip():
+                raise ValueError('El username no puede estar vacío')
+            if not all(c.isalnum() or c in ['_', '-'] for c in v):
+                raise ValueError('Username solo puede contener letras, números, guiones y guiones bajos')
+            return v.strip().lower()
+        return v
+    
+    @validator('password')
+    def validar_password(cls, v):
+        if v is not None:
+            if len(v) < 8:
+                raise ValueError('La contraseña debe tener al menos 8 caracteres')
+            if not any(c.isupper() for c in v):
+                raise ValueError('La contraseña debe contener al menos una mayúscula')
+            if not any(c.islower() for c in v):
+                raise ValueError('La contraseña debe contener al menos una minúscula')
+            if not any(c.isdigit() for c in v):
+                raise ValueError('La contraseña debe contener al menos un número')
+        return v
 
 class UsuarioResponse(UsuarioBase):
     id_usuario: int

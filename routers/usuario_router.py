@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.orm import Session
 from typing import Optional
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from datetime import datetime, timedelta
 
 from database.database import get_db
@@ -138,8 +138,20 @@ class UsuarioCreate(BaseModel):
 
 class UsuarioUpdate(BaseModel):
     """Schema para actualizar usuario"""
+    username: Optional[str] = Field(None, min_length=4, max_length=50)
     email: Optional[EmailStr] = None
+    password: Optional[str] = Field(None, min_length=8, max_length=100)
     estado: Optional[str] = None
+    
+    @field_validator('username')
+    def validate_username_field(cls, v):
+        if v:
+            v = sanitize_input(v, max_length=50)
+            is_valid, msg = validate_username(v)
+            if not is_valid:
+                raise ValueError(msg)
+            return v
+        return v
     
     @field_validator('email')
     def validate_email_field(cls, v):
@@ -149,6 +161,14 @@ class UsuarioUpdate(BaseModel):
             if not is_valid:
                 raise ValueError(msg)
             return v.lower()
+        return v
+    
+    @field_validator('password')
+    def validate_password_field(cls, v):
+        if v:
+            is_valid, msg = validate_password_strength(v)
+            if not is_valid:
+                raise ValueError(msg)
         return v
 
 class PasswordChange(BaseModel):
@@ -786,8 +806,38 @@ async def actualizar_usuario(
     client_ip = get_client_ip(request)
     
     try:
+        # ✅ Validar que username no esté en uso por otro usuario
+        if usuario_data.username:
+            usuario_existente = db.query(Usuario).filter(
+                Usuario.username == usuario_data.username,
+                Usuario.id_usuario != id_usuario
+            ).first()
+            
+            if usuario_existente:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El username '{usuario_data.username}' ya está en uso"
+                )
+
+        # ✅ Validar que email no esté en uso por otro usuario
+        if usuario_data.email:
+            email_existente = db.query(Usuario).filter(
+                Usuario.email == usuario_data.email,
+                Usuario.id_usuario != id_usuario
+            ).first()
+            
+            if email_existente:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El email '{usuario_data.email}' ya está en uso"
+                )
+
+        # ✅ Si hay password, hashearla
+        if usuario_data.password:
+            usuario_data.password = get_password_hash(usuario_data.password)
+
         usuario_actualizado = repo.update(id_usuario, usuario_data)
-   
+
         log_security_event(
             "USER_UPDATED",
             usuario_actualizado.username,
