@@ -9,15 +9,30 @@ from config.redis_config import get_redis_client
 import uuid
 import json
 import hashlib
+import torch
 
 class RAGService:
+    # 🔥 Variables de clase compartidas (singleton pattern)
+    _embedder = None
+    _reranker = None
+    _models_loaded = False
+    
     def __init__(self, db: Session, use_cache: bool = True):
         self.db = db
         self.chroma = ChromaDBConfig()
         
-        # Modelos de IA
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        # 🔥 SOLUCIÓN: Cargar modelos solo UNA VEZ (lazy loading)
+        if not RAGService._models_loaded:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            print(f"🚀 Inicializando modelos RAG (solo primera vez) en device: {device}")
+            
+            RAGService._embedder = SentenceTransformer("all-MiniLM-L6-v2", device=device)
+            RAGService._reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+            RAGService._models_loaded = True
+        
+        # Usar las instancias compartidas de clase
+        self.embedder = RAGService._embedder
+        self.reranker = RAGService._reranker
         
         # 🔥 Redis cache
         self.use_cache = use_cache
@@ -33,7 +48,7 @@ class RAGService:
                 self.redis = get_redis_client()
             except Exception as e:
                 print(f"⚠️  Redis no disponible, funcionando sin caché: {e}")
-                self.use_cache = False
+            self.use_cache = False
 
     def _get_cache_key(self, id_agente: int, query: str, n_results: int, use_reranking: bool) -> str:
         """Genera clave única para caché"""

@@ -19,13 +19,41 @@ class CategoriaService:
         self.rag = RAGService(db)
 
     # ============================================
-    # 🔹 Crear categoría
+    # 🔹 Crear categoría CON usuario del token
+    # ============================================
+    def crear_categoria_con_usuario(
+        self,
+        data: dict  # ✅ CAMBIO: Ahora recibe dict con creado_por incluido
+    ) -> Categoria:
+        """
+        Crea una categoría incluyendo el creado_por del token.
+        El dict 'data' ya incluye: nombre, descripcion, id_agente, creado_por, etc.
+        """
+        # Convertir dict a objeto CategoriaCreate para validación
+        categoria_create = CategoriaCreate(**data)
+        
+        # Crear con creado_por incluido
+        categoria = self.repo.create(
+            categoria_create,
+            creado_por=data.get("creado_por")
+        )
+        
+        # 🔥 Indexar categoría en Chroma para el RAG
+        self.rag.indexar_categoria(categoria)
+        return categoria
+
+    # ============================================
+    # 🔹 Crear categoría (método legacy - mantener compatibilidad)
     # ============================================
     def crear_categoria(
         self,
         data: CategoriaCreate,
         creado_por: Optional[int] = None
     ) -> Categoria:
+        """
+        Método legacy para mantener compatibilidad con código existente.
+        Recomendado usar crear_categoria_con_usuario() en nuevos endpoints.
+        """
         categoria = self.repo.create(data, creado_por)
         # 🔥 Indexar categoría en Chroma para el RAG
         self.rag.indexar_categoria(categoria)
@@ -68,13 +96,38 @@ class CategoriaService:
         return self.repo.get_by_agente(id_agente, activo)
 
     # ============================================
-    # 🔹 Actualizar categoría
+    # 🔹 Actualizar categoría CON usuario del token
+    # ============================================
+    def actualizar_categoria_con_usuario(
+        self,
+        id_categoria: int,
+        data: dict  # ✅ CAMBIO: Recibe dict con creado_por opcional
+    ) -> Categoria:
+        """
+        Actualiza una categoría, opcionalmente actualizando creado_por.
+        """
+        # Convertir dict a CategoriaUpdate (solo campos presentes)
+        update_data = {k: v for k, v in data.items() if v is not None}
+        categoria_update = CategoriaUpdate(**update_data)
+        
+        categoria = self.repo.update(id_categoria, categoria_update)
+        
+        # 🔥 Reindexar categoría en Chroma
+        self.rag.indexar_categoria(categoria)
+        return categoria
+
+    # ============================================
+    # 🔹 Actualizar categoría (método legacy)
     # ============================================
     def actualizar_categoria(
         self,
         id_categoria: int,
         data: CategoriaUpdate
     ) -> Categoria:
+        """
+        Método legacy para mantener compatibilidad.
+        Recomendado usar actualizar_categoria_con_usuario() en nuevos endpoints.
+        """
         categoria = self.repo.update(id_categoria, data)
         # 🔥 Reindexar categoría en Chroma
         self.rag.indexar_categoria(categoria)
