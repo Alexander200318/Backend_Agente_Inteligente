@@ -13,7 +13,6 @@ class UnidadContenidoRepository:
     
     def create(self, data: UnidadContenidoCreate, creado_por: int):
         try:
-            # 🔥 CAMBIO: Remover estado="borrador" hardcodeado
             contenido_dict = data.dict()
             contenido = UnidadContenido(**contenido_dict, creado_por=creado_por)
             self.db.add(contenido)
@@ -31,10 +30,39 @@ class UnidadContenidoRepository:
         return cont
     
     def get_by_agente(self, id_agente: int, estado: Optional[str] = None, skip: int = 0, limit: int = 100):
-        query = self.db.query(UnidadContenido).filter(UnidadContenido.id_agente == id_agente)
+        from models.agente_virtual import AgenteVirtual
+        from models.categoria import Categoria
+        
+        # 🔥 Query mejorado con aliases explícitos
+        query = (
+            self.db.query(
+                UnidadContenido,
+                AgenteVirtual.nombre_agente,
+                AgenteVirtual.area_especialidad,
+                Categoria.nombre.label('categoria_nombre')
+            )
+            .join(AgenteVirtual, UnidadContenido.id_agente == AgenteVirtual.id_agente)
+            .outerjoin(Categoria, UnidadContenido.id_categoria == Categoria.id_categoria)
+            .filter(UnidadContenido.id_agente == id_agente)
+        )
+        
         if estado:
             query = query.filter(UnidadContenido.estado == estado)
-        return query.order_by(UnidadContenido.prioridad.desc()).offset(skip).limit(limit).all()
+        
+        resultados = query.order_by(UnidadContenido.prioridad.desc()).offset(skip).limit(limit).all()
+        
+        # 🔥 Construir respuesta con nombres incluidos
+        contenidos_con_nombres = []
+        for contenido, nombre_agente, area_especialidad, categoria_nombre in resultados:
+            contenido_dict = {
+                **{k: v for k, v in contenido.__dict__.items() if not k.startswith('_')},
+                'agente_nombre': nombre_agente,
+                'area_especialidad': area_especialidad,
+                'categoria_nombre': categoria_nombre
+            }
+            contenidos_con_nombres.append(contenido_dict)
+        
+        return contenidos_con_nombres
     
     def update(self, id_contenido: int, data: UnidadContenidoUpdate, actualizado_por: int):
         try:
@@ -58,7 +86,6 @@ class UnidadContenidoRepository:
         self.db.refresh(cont)
         return cont
     
-    
     def delete(self, id_contenido: int, hard_delete: bool = True):
         """
         Elimina contenido (soft o hard delete)
@@ -70,10 +97,8 @@ class UnidadContenidoRepository:
             cont = self.get_by_id(id_contenido)
             
             if hard_delete:
-                # Eliminación física
                 self.db.delete(cont)
             else:
-                # Soft delete
                 cont.estado = "archivado"
             
             self.db.commit()

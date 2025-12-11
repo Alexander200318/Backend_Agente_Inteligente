@@ -32,6 +32,10 @@ class UnidadContenidoUpdate(BaseModel):
     fecha_vigencia_inicio: Optional[date] = None
     fecha_vigencia_fin: Optional[date] = None
 
+    id_agente: Optional[int] = None
+    id_categoria: Optional[int] = None
+    id_departamento: Optional[int] = None
+
 class UnidadContenidoResponse(UnidadContenidoBase):
     id_contenido: int
     id_agente: int
@@ -39,6 +43,9 @@ class UnidadContenidoResponse(UnidadContenidoBase):
     estado: str
     version: int
     fecha_creacion: datetime
+    
+    agente_nombre: Optional[str] = None
+    categoria_nombre: Optional[str] = None
     
     class Config:
         from_attributes = True
