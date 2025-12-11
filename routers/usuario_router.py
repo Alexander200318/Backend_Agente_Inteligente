@@ -9,7 +9,10 @@ from database.database import get_db
 from models.usuario import Usuario
 from repositories.usuario_repo import UsuarioRepository
 from exceptions.base import NotFoundException, BadRequestException
-
+from schemas.usuario_departamento_schemas import (
+    CambiarDepartamentoRequest, 
+    CambiarDepartamentoResponse
+)
 
 
 from schemas.usuario_completo_schemas import UsuarioCompletoCreate, UsuarioCompletoResponse
@@ -1274,3 +1277,166 @@ async def obtener_usuario(
         }
     except NotFoundException:
         raise
+
+
+
+
+
+
+@router.put("/{id_usuario}/cambiar-departamento", 
+            response_model=CambiarDepartamentoResponse,
+            status_code=status.HTTP_200_OK)
+async def cambiar_departamento(
+    id_usuario: int,
+    data: CambiarDepartamentoRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    🏢 Cambiar departamento de un usuario
+    
+    - Actualiza el departamento en la tabla Persona
+    - Valida que el departamento exista (si se proporciona)
+    - Permite remover departamento (id_departamento = null)
+    - Registra el cambio para auditoría
+    """
+    client_ip = get_client_ip(request)
+    
+    try:
+        # 1. Verificar que el usuario existe
+        usuario = db.query(Usuario).filter(
+            Usuario.id_usuario == id_usuario
+        ).first()
+        
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Usuario con ID {id_usuario} no encontrado"
+            )
+        
+        # 2. Verificar que el usuario tiene persona asociada
+        if not usuario.persona:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El usuario no tiene información de persona asociada"
+            )
+        
+        persona = usuario.persona
+        
+        # 3. Guardar departamento anterior para la respuesta
+        departamento_anterior = None
+        if persona.id_departamento:
+            dept_ant = db.query(Departamento).filter(
+                Departamento.id_departamento == persona.id_departamento
+            ).first()
+            
+            if dept_ant:
+                departamento_anterior = {
+                    "id_departamento": dept_ant.id_departamento,
+                    "nombre": dept_ant.nombre,
+                    "codigo": dept_ant.codigo,
+                    "facultad": dept_ant.facultad
+                }
+        
+        # 4. Validar nuevo departamento (si se proporciona)
+        departamento_nuevo = None
+        if data.id_departamento is not None:
+            dept_nuevo = db.query(Departamento).filter(
+                Departamento.id_departamento == data.id_departamento,
+                Departamento.activo == True
+            ).first()
+            
+            if not dept_nuevo:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Departamento con ID {data.id_departamento} no encontrado o inactivo"
+                )
+            
+            departamento_nuevo = {
+                "id_departamento": dept_nuevo.id_departamento,
+                "nombre": dept_nuevo.nombre,
+                "codigo": dept_nuevo.codigo,
+                "facultad": dept_nuevo.facultad
+            }
+        
+        # 5. Verificar si hay cambio real
+        if persona.id_departamento == data.id_departamento:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El usuario ya pertenece a este departamento"
+            )
+        
+        # 6. Actualizar departamento en Persona
+        persona.id_departamento = data.id_departamento
+        persona.fecha_actualizacion = datetime.now()
+        
+        # 7. Commit de la transacción
+        db.commit()
+        db.refresh(persona)
+        db.refresh(usuario)
+        
+        # 8. Log de seguridad
+        mensaje_log = f"Cambio de departamento"
+        if departamento_anterior:
+            mensaje_log += f" desde {departamento_anterior['nombre']}"
+        if departamento_nuevo:
+            mensaje_log += f" hacia {departamento_nuevo['nombre']}"
+        else:
+            mensaje_log += " (departamento removido)"
+        
+        if data.motivo:
+            mensaje_log += f" - Motivo: {data.motivo}"
+        
+        log_security_event(
+            "DEPARTAMENTO_CHANGED",
+            usuario.username,
+            mensaje_log,
+            success=True,
+            ip_address=client_ip
+        )
+        
+        # 9. Construir respuesta
+        mensaje = "Departamento actualizado exitosamente"
+        if data.id_departamento is None:
+            mensaje = "Departamento removido exitosamente"
+        
+        return {
+            "message": mensaje,
+            "usuario": {
+                "id_usuario": usuario.id_usuario,
+                "username": usuario.username,
+                "email": usuario.email,
+                "persona": {
+                    "id_persona": persona.id_persona,
+                    "nombre": persona.nombre,
+                    "apellido": persona.apellido,
+                    "cedula": persona.cedula
+                }
+            },
+            "departamento_anterior": departamento_anterior,
+            "departamento_nuevo": departamento_nuevo,
+            "fecha_cambio": datetime.now()
+        }
+        
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        
+        log_security_event(
+            "DEPARTAMENTO_CHANGE_ERROR",
+            f"Usuario ID: {id_usuario}",
+            f"Error: {str(e)}",
+            success=False,
+            ip_address=client_ip
+        )
+        
+        print(f"❌ Error cambiando departamento: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al cambiar departamento"
+        )
