@@ -1,6 +1,5 @@
 // static/js/widget.js
 
-// 🔥 PROTECCIÓN CONTRA EXTENSIONES QUE INYECTAN CÓDIGO (Monica, Sider, etc.)
 (function() {
     'use strict';
     
