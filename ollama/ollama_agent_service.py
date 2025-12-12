@@ -4,7 +4,7 @@ from ollama.prompt_builder import build_system_prompt, build_chat_prompt
 from rag.rag_service import RAGService
 from sqlalchemy.orm import Session
 from models.agente_virtual import AgenteVirtual
-from typing import Dict, Any, List, Optional, Generator 
+from typing import Dict, Any, List, Optional, Generator  # 🔥 Agregar Generator
 
 class OllamaAgentService:
     def __init__(self, db: Session):
@@ -22,6 +22,7 @@ class OllamaAgentService:
         max_tokens: Optional[int] = None
     ) -> Dict[str, Any]:
         """Chatea con agente SIN streaming"""
+        # ... tu código actual sin cambios ...
         
         agente = self.db.query(AgenteVirtual).filter(
             AgenteVirtual.id_agente == id_agente
@@ -134,6 +135,7 @@ class OllamaAgentService:
             
             raise Exception(f"Error en Ollama: {error_msg}")
 
+    # 🔥 NUEVO MÉTODO: Chat con streaming
     def chat_with_agent_stream(
         self, 
         id_agente: int, 
@@ -237,7 +239,7 @@ class OllamaAgentService:
                 "content": "💬 Generando respuesta..."
             }
 
-            # 9) STREAMING de tokens desde Ollama
+            # 9) 🔥 STREAMING de tokens desde Ollama
             full_response = ""
             
             try:
@@ -315,87 +317,6 @@ class OllamaAgentService:
             yield {
                 "type": "error",
                 "content": str(e)
-            }
-
-    # 🔥 NUEVO: Chat automático con selección de agente
-    def chat_auto_stream(
-        self,
-        pregunta: str,
-        departamento_codigo: str = "",
-        k: Optional[int] = None,
-        use_reranking: Optional[bool] = None,
-        temperatura: Optional[float] = None,
-        max_tokens: Optional[int] = None
-    ) -> Generator[Dict[str, Any], None, None]:
-        """
-        Chat con selección automática de agente basado en departamento
-        
-        Args:
-            pregunta: Pregunta del usuario
-            departamento_codigo: Código del departamento (opcional)
-            k, use_reranking, temperatura, max_tokens: Parámetros opcionales
-            
-        Yields:
-            Dict con eventos de streaming
-        """
-        try:
-            yield {
-                "type": "status",
-                "content": "🔍 Seleccionando agente apropiado..."
-            }
-            
-            # 1) Seleccionar agente basado en departamento
-            query = self.db.query(AgenteVirtual)
-            
-            if departamento_codigo:
-                # Buscar agente específico por departamento
-                agente = query.filter(
-                    AgenteVirtual.departamento_codigo == departamento_codigo,
-                    AgenteVirtual.activo == True
-                ).first()
-                
-                if not agente:
-                    yield {
-                        "type": "error",
-                        "content": f"No se encontró agente para el departamento: {departamento_codigo}"
-                    }
-                    return
-            else:
-                # Sin departamento: usar agente por defecto o el primero activo
-                agente = query.filter(
-                    AgenteVirtual.activo == True
-                ).order_by(AgenteVirtual.id_agente).first()
-                
-                if not agente:
-                    yield {
-                        "type": "error",
-                        "content": "No hay agentes activos disponibles"
-                    }
-                    return
-
-            # 2) Notificar agente seleccionado
-            yield {
-                "type": "agent_selected",
-                "content": f"🤖 Usando agente: {agente.nombre_agente}",
-                "agent_id": agente.id_agente,
-                "agent_name": agente.nombre_agente
-            }
-
-            # 3) Delegar al método de streaming normal
-            for event in self.chat_with_agent_stream(
-                id_agente=agente.id_agente,
-                pregunta=pregunta,
-                k=k,
-                use_reranking=use_reranking,
-                temperatura=temperatura,
-                max_tokens=max_tokens
-            ):
-                yield event
-
-        except Exception as e:
-            yield {
-                "type": "error",
-                "content": f"Error en chat automático: {str(e)}"
             }
 
     def list_available_models(self) -> List[str]:

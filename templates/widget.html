@@ -90,26 +90,6 @@
         </div>
     </div>
 
-    <!-- Configuración global del widget -->
-    <script>
-        window.TECAI_WIDGET_CONFIG = {
-            // URL base de tu backend FastAPI
-            apiBaseUrl: "http://localhost:8000",  
-
-            // ID de sesión único por pestaña/navegador
-            sessionId: (function () {
-                // Si ya existe en esta pestaña, reutiliza
-                if (window.sessionStorage.getItem("tecai_session_id")) {
-                    return window.sessionStorage.getItem("tecai_session_id");
-                }
-                // Si no existe, crea uno nuevo
-                const sid = "sess-" + Date.now() + "-" + Math.random().toString(36).substring(2, 10);
-                window.sessionStorage.setItem("tecai_session_id", sid);
-                return sid;
-            })()
-        };
-    </script>
-
     <script src="/static/js/widget.js"></script>
     
     <style>
