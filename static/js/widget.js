@@ -50,6 +50,28 @@
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
+// 🔥 Session por navegador (web). El móvil usará otro session_id.
+const SESSION_STORAGE_KEY = 'tecai_session_id';
+
+let SESSION_ID = null;
+try {
+    SESSION_ID = localStorage.getItem(SESSION_STORAGE_KEY);
+} catch (e) {
+    console.warn('localStorage no disponible, usando session_id en memoria');
+}
+
+if (!SESSION_ID) {
+    SESSION_ID = 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+    try {
+        localStorage.setItem(SESSION_STORAGE_KEY, SESSION_ID);
+    } catch (e) {
+        console.warn('No se pudo guardar session_id en localStorage');
+    }
+}
+
+console.log('🆔 SESSION_ID usado por este widget:', SESSION_ID);
+
+
 // Variables globales
 let speechSynthesis = window.speechSynthesis;
 let availableVoices = [];
@@ -681,15 +703,18 @@ async function sendMessage() {
                 endpoint = `${API_BASE_URL}/chat/agent/stream`;
                 body = { 
                     message: mensaje, 
-                    agent_id: Number(selectedAgentId)
+                    agent_id: Number(selectedAgentId),
+                    session_id: SESSION_ID         
                 };
             } else {
                 endpoint = `${API_BASE_URL}/chat/auto/stream`;
                 body = { 
                     message: mensaje, 
-                    departamento_codigo: ""
+                    departamento_codigo: "",
+                    session_id: SESSION_ID          
                 };
             }
+
 
             currentStreamController = new AbortController();
             const timeoutId = setTimeout(() => {
@@ -813,7 +838,11 @@ async function processStream(response) {
                     if (!jsonStr) continue;
                     
                     const event = JSON.parse(jsonStr);
-                    
+
+                    if (event.session_id && event.session_id !== SESSION_ID) {
+                    continue;
+                    }
+
                     switch (event.type) {
                         case 'status':
                             console.log('📊', event.content);
