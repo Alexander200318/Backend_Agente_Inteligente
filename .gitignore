@@ -16,6 +16,8 @@ vectorstore/
 **/chroma/
 **/vectorstore/
 
+
+
 # ─────────────────────────────────────────
 #  HUGGINGFACE / SENTENCE TRANSFORMERS CACHE
 # ─────────────────────────────────────────
@@ -49,3 +51,6 @@ Thumbs.db
 # ─────────────────────────────────────────
 .vscode/
 .idea/
+
+/hf_models
+
