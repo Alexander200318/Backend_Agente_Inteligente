@@ -1,8 +1,7 @@
 from exceptions.base import ValidationException
-from exceptions.base import ValidationException
 from typing import Optional
 from sqlalchemy.orm import Session
-from repositories.usuario_agente_repo import UsuarioAgenteRepository,UsuarioAgenteCreate,UsuarioAgenteUpdate
+from repositories.usuario_agente_repo import UsuarioAgenteRepository, UsuarioAgenteCreate, UsuarioAgenteUpdate
 
 
 class UsuarioAgenteService:
@@ -32,3 +31,21 @@ class UsuarioAgenteService:
     
     def revocar_acceso(self, id_usuario_agente: int):
         return self.repo.delete(id_usuario_agente)
+    
+    def verificar_permisos(self, id_usuario: int, id_agente: int):
+        """
+        Retorna los permisos del usuario sobre el agente específico.
+        Si no tiene acceso activo, retorna None.
+        """
+        permisos = self.repo.get_by_usuario_agente(id_usuario, id_agente)
+        
+        if permisos and permisos.activo:
+            return permisos
+        return None
+    
+    def listar_agentes_accesibles(self, id_usuario: int):
+        """
+        Retorna lista de IDs de agentes a los que el usuario tiene acceso
+        """
+        asignaciones = self.repo.get_by_usuario(id_usuario, activo=True)
+        return [asig.id_agente for asig in asignaciones if asig.puede_ver_contenido]
