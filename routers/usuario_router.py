@@ -209,8 +209,12 @@ async def login(
     client_ip = get_client_ip(request)
     
     try:
-        # 1. Buscar usuario
-        usuario = db.query(Usuario).filter(
+        # 1. Buscar usuario con su persona
+        from sqlalchemy.orm import joinedload
+
+        usuario = db.query(Usuario).options(
+            joinedload(Usuario.persona)
+        ).filter(
             Usuario.username == credentials.username
         ).first()
         
@@ -395,6 +399,10 @@ async def login(
                 "estado": usuario.estado,
                 "requiere_cambio_password": usuario.requiere_cambio_password,
                 "ultimo_acceso": usuario.ultimo_acceso.isoformat() if usuario.ultimo_acceso else None,
+                
+                # 🔥 NUEVO: Incluir id_departamento desde la persona
+                "id_departamento": usuario.persona.id_departamento if usuario.persona else None,
+                "nombre_completo": f"{usuario.persona.nombre} {usuario.persona.apellido}" if usuario.persona else None,
                 
                 # 🎭 INFORMACIÓN DE ROLES
                 "rol_principal": {
