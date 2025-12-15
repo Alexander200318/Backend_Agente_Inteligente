@@ -1,4 +1,6 @@
 # app/rag/rag_service.py
+import os
+os.environ["HF_HUB_OFFLINE"] = "1" 
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from sentence_transformers import SentenceTransformer, CrossEncoder
