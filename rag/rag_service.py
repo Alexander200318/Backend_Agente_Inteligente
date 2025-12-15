@@ -90,9 +90,9 @@ class RAGService:
                 print(f"⚠️  Redis no disponible, funcionando sin caché: {e}")
                 self.use_cache = False  # solo desactivar si falla
 
-    def _get_cache_key(self, id_agente: int, query: str, n_results: int, use_reranking: bool) -> str:
-        """Genera clave única para caché"""
-        data = f"rag:{id_agente}:{query}:{n_results}:{use_reranking}"
+    def _get_cache_key(self, id_agente, query, n_results, use_reranking, session_id=None):
+        session_part = f":{session_id}" if session_id else ""
+        data = f"rag:{id_agente}{session_part}:{query}:{n_results}:{use_reranking}"
         return hashlib.md5(data.encode()).hexdigest()
 
     def _get_from_cache(self, cache_key: str) -> Optional[List[Dict]]:
@@ -124,11 +124,13 @@ class RAGService:
             print(f"⚠️  Error guardando en caché: {e}")
 
     # 🔥 Cache de embeddings en memoria
-    def _get_cached_embedding(self, text: str):
+    def _get_cached_embedding(self, text: str, session_id: Optional[str] = None):
         """
         Obtiene embedding del cache en memoria o lo genera
         """
-        text_hash = hashlib.md5(text.encode()).hexdigest()
+        # Agregar session al hash SOLO si existe
+        cache_key = f"{session_id}:{text}" if session_id else text
+        text_hash = hashlib.md5(cache_key.encode()).hexdigest()
         
         if text_hash not in self._embedding_cache:
             embedding = self.embedder.encode([text])[0].tolist()
@@ -145,6 +147,7 @@ class RAGService:
         self, 
         id_agente: int, 
         query: str, 
+        session_id: Optional[str] = None,
         n_results: int = 3,
         use_reranking: bool = False,
         use_priority_boost: bool = True,
@@ -164,7 +167,7 @@ class RAGService:
         
         collection = self.create_collection_if_missing(id_agente)
         
-        q_emb = self._get_cached_embedding(query)
+        q_emb = self._get_cached_embedding(query, session_id)
         
         initial_results = n_results * 3 if use_reranking else n_results
         res = collection.query(query_embeddings=[q_emb], n_results=initial_results)
@@ -251,7 +254,7 @@ class RAGService:
         self._embedding_cache.clear()
         print("🗑️  Cache de embeddings limpiado")
         
-    def clear_cache(self, id_agente: Optional[int] = None):
+    def clear_cache(self, id_agente: Optional[int] = None, session_id: Optional[str] = None):
         """
         Limpia el caché de Redis
         """
@@ -268,7 +271,7 @@ class RAGService:
                 else:
                     print("ℹ️  No hay entradas en caché")
             else:
-                pattern = f"rag:{id_agente}:*"
+                pattern = f"rag:{id_agente}:{session_id}:*"
                 keys = self.redis.keys(pattern)
                 if keys:
                     self.redis.delete(*keys)

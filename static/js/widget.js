@@ -703,14 +703,17 @@ async function sendMessage() {
                 body = { 
                     message: mensaje, 
                     agent_id: Number(selectedAgentId),
-                    session_id: SESSION_ID         
+                    session_id: SESSION_ID,
+                    origin: "widget"  // ← AGREGAR
                 };
             } else {
                 endpoint = `${API_BASE_URL}/chat/auto/stream`;
                 body = { 
                     message: mensaje, 
                     departamento_codigo: "",
-                    session_id: SESSION_ID          
+                    session_id: SESSION_ID,
+                    origin: "widget"  // ← AGREGAR
+                    
                 };
             }
 
@@ -849,7 +852,7 @@ async function processStream(response) {
                             
                         case 'context':
                             console.log('📚', event.content);
-                            typingIndicator.classList.remove('active');
+                            
                             break;
                             
                         case 'classification':
@@ -858,7 +861,7 @@ async function processStream(response) {
                             
                         case 'token':
                             if (!currentBotMessageDiv) {
-                                typingIndicator.classList.remove('active');
+                                
                                 
                                 currentBotMessageDiv = document.createElement('div');
                                 currentBotMessageDiv.className = 'message bot streaming';
@@ -871,6 +874,12 @@ async function processStream(response) {
                                 `;
                                 chatMessages.appendChild(currentBotMessageDiv);
                                 messageContent = currentBotMessageDiv.querySelector('.bot-text');
+
+                                 // 🔥 2. Forzar reflow (para que el navegador pinte el div)
+                                currentBotMessageDiv.offsetHeight;
+                                
+                                // 🔥 3. AHORA sí ocultar loader
+                                typingIndicator.classList.remove('active');
                             }
                             
                             fullResponse += event.content;

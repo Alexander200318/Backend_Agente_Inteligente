@@ -15,6 +15,8 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 class ChatRequest(BaseModel):
     agent_id: int
     message: str
+    session_id: str  # ← AGREGAR (obligatorio)
+    origin: Optional[str] = "web"  # ← AGREGAR (web/mobile/widget)
     k: Optional[int] = None
     use_reranking: Optional[bool] = None
     temperatura: Optional[float] = None
@@ -52,6 +54,8 @@ async def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get
             for event in service.chat_with_agent_stream(
                 id_agente=payload.agent_id,
                 pregunta=payload.message,
+                session_id=payload.session_id,  # ← AGREGAR
+                origin=payload.origin, 
                 k=payload.k,
                 use_reranking=payload.use_reranking,
                 temperatura=payload.temperatura,

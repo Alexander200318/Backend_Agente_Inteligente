@@ -5,8 +5,12 @@ from rag.rag_service import RAGService
 from sqlalchemy.orm import Session
 from models.agente_virtual import AgenteVirtual
 from typing import Dict, Any, List, Optional, Generator  # 🔥 Agregar Generator
+from utils.session_manager import SessionManager
+
 
 class OllamaAgentService:
+    _session_manager = SessionManager(ttl_minutes=30) 
+
     def __init__(self, db: Session):
         self.db = db
         self.client = OllamaClient()
@@ -15,8 +19,11 @@ class OllamaAgentService:
     def chat_with_agent(
         self, 
         id_agente: int, 
-        pregunta: str, 
+        pregunta: str,
+        session_id: str, origin: str = "web",
+         
         k: Optional[int] = None,
+        
         use_reranking: Optional[bool] = None,
         temperatura: Optional[float] = None,
         max_tokens: Optional[int] = None
@@ -42,10 +49,16 @@ class OllamaAgentService:
 
         system_prompt = build_system_prompt(agente)
 
+
+        print(f"🔗 Session: {session_id} | Origin: {origin}")
+        self._session_manager.touch(session_id)  # ← AGREGAR
+
+
         try:
             results = self.rag.search(
                 id_agente=id_agente, 
                 query=pregunta, 
+                session_id=session_id, 
                 n_results=k_final,
                 use_reranking=use_reranking_final,
                 use_priority_boost=True,
@@ -94,6 +107,10 @@ class OllamaAgentService:
                 "response": res.get("response", ""),
                 "agent_id": id_agente,
                 "agent_name": agente.nombre_agente,
+
+                "session_id": session_id,      # ← AGREGAR
+                "origin": origin,  
+
                 "sources_used": sources_count,
                 "model_used": model_name,
                 "context_size": len(contexto),
@@ -140,6 +157,7 @@ class OllamaAgentService:
         self, 
         id_agente: int, 
         pregunta: str, 
+        session_id: str, origin: str = "web",
         k: Optional[int] = None,
         use_reranking: Optional[bool] = None,
         temperatura: Optional[float] = None,
@@ -181,6 +199,9 @@ class OllamaAgentService:
             # 3) System prompt
             system_prompt = build_system_prompt(agente)
 
+            print(f"🔗 Session: {session_id} | Origin: {origin}")
+            self._session_manager.touch(session_id)  # ← AGREGAR
+
             # 4) Buscar contexto con RAG
             yield {
                 "type": "status",
@@ -191,6 +212,7 @@ class OllamaAgentService:
                 results = self.rag.search(
                     id_agente=id_agente, 
                     query=pregunta, 
+                    session_id=session_id,  # ← AGREGAR
                     n_results=k_final,
                     use_reranking=use_reranking_final,
                     use_priority_boost=True,
@@ -265,6 +287,8 @@ class OllamaAgentService:
                     "metadata": {
                         "agent_id": id_agente,
                         "agent_name": agente.nombre_agente,
+                        "session_id": session_id,      # ← AGREGAR
+                        "origin": origin,              # ← AGREGAR
                         "sources_used": sources_count,
                         "model_used": model_name,
                         "params_used": {

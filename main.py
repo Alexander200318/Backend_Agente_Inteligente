@@ -63,6 +63,21 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+# 🔥 NUEVO: Iniciar limpieza de sesiones en background
+import threading
+from utils.background_tasks import cleanup_sessions_periodically
+
+cleanup_thread = threading.Thread(
+    target=cleanup_sessions_periodically,
+    args=(10,),  # Limpia cada 10 minutos
+    daemon=True
+)
+cleanup_thread.start()
+print("🧹 Background task: Limpieza de sesiones iniciada (cada 10 min)")
+
+
+
 # ==================== ARCHIVOS ESTÁTICOS ====================
 
 # Montar archivos estáticos (CSS, JS, imágenes)

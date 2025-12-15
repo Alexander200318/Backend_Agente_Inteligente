@@ -16,6 +16,8 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 class AutoChatRequest(BaseModel):
     message: str
     departamento_codigo: Optional[str] = None
+    session_id: str  # ← AGREGAR (obligatorio)
+    origin: Optional[str] = "web"  # ← AGREGAR (web/mobile/widget)
     k: Optional[int] = None
     use_reranking: Optional[bool] = None
     temperatura: Optional[float] = None
@@ -91,6 +93,9 @@ async def chat_auto_stream(payload: AutoChatRequest, db: Session = Depends(get_d
             for event in service.chat_with_agent_stream(
                 id_agente=int(agent_id),
                 pregunta=payload.message,
+                session_id=payload.session_id,  # ← AGREGAR
+                origin=payload.origin,           # ← AGREGAR
+
                 k=payload.k,
                 use_reranking=payload.use_reranking,
                 temperatura=payload.temperatura,
