@@ -1,11 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from database.database import get_db
 from services.usuario_agente_service import UsuarioAgenteService
-from schemas.usuario_agente_schemas import UsuarioAgenteResponse, UsuarioAgenteCreate,UsuarioAgenteUpdate
-
-
+from schemas.usuario_agente_schemas import UsuarioAgenteResponse, UsuarioAgenteCreate, UsuarioAgenteUpdate
 
 from fastapi import APIRouter, Depends, status
 
@@ -35,3 +33,63 @@ def actualizar_permisos(id_usuario_agente: int, data: UsuarioAgenteUpdate, db: S
 def revocar_acceso(id_usuario_agente: int, db: Session = Depends(get_db)):
     service = UsuarioAgenteService(db)
     return service.revocar_acceso(id_usuario_agente)
+
+# 🔥 NUEVO: Verificar permisos de un usuario sobre un agente específico
+@router.get("/verificar/{id_usuario}/{id_agente}", status_code=status.HTTP_200_OK)
+def verificar_permisos_usuario_agente(
+    id_usuario: int,
+    id_agente: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica los permisos de un usuario sobre un agente específico.
+    Retorna los permisos si existe la asignación activa, error 403 si no.
+    """
+    service = UsuarioAgenteService(db)
+    permisos = service.verificar_permisos(id_usuario, id_agente)
+    
+    if not permisos:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"El usuario {id_usuario} no tiene acceso al agente {id_agente}"
+        )
+    
+    return {
+        "tiene_acceso": True,
+        "id_usuario": id_usuario,
+        "id_agente": id_agente,
+        "permisos": {
+            "puede_ver_contenido": permisos.puede_ver_contenido,
+            "puede_crear_contenido": permisos.puede_crear_contenido,
+            "puede_editar_contenido": permisos.puede_editar_contenido,
+            "puede_eliminar_contenido": permisos.puede_eliminar_contenido,
+            "puede_publicar_contenido": permisos.puede_publicar_contenido,
+            "puede_ver_metricas": permisos.puede_ver_metricas,
+            "puede_exportar_datos": permisos.puede_exportar_datos,
+            "puede_configurar_agente": permisos.puede_configurar_agente,
+            "puede_gestionar_permisos": permisos.puede_gestionar_permisos,
+            "puede_gestionar_categorias": permisos.puede_gestionar_categorias,
+            "puede_gestionar_widgets": permisos.puede_gestionar_widgets
+        },
+        "activo": permisos.activo,
+        "fecha_asignacion": permisos.fecha_asignacion.isoformat() if permisos.fecha_asignacion else None
+    }
+
+# 🔥 NUEVO: Listar todos los agentes accesibles por un usuario
+@router.get("/usuario/{id_usuario}/agentes-accesibles", status_code=status.HTTP_200_OK)
+def listar_agentes_accesibles(
+    id_usuario: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos los IDs de agentes a los que el usuario tiene acceso activo.
+    Útil para filtrar contenidos en el frontend.
+    """
+    service = UsuarioAgenteService(db)
+    ids_agentes = service.listar_agentes_accesibles(id_usuario)
+    
+    return {
+        "id_usuario": id_usuario,
+        "agentes_accesibles": ids_agentes,
+        "total_agentes": len(ids_agentes)
+    }
