@@ -476,10 +476,16 @@
             padding: 12px 16px;
             align-items: center;
             gap: 4px;
+            transition: opacity 0.2s ease-out, transform 0.2s ease-out;
         }
 
         .typing-indicator.active {
             display: flex;
+        }
+
+        .typing-indicator:not(.active) {
+            opacity: 0;
+            transform: scale(0.9);
         }
 
         .typing-indicator span {
@@ -627,3 +633,11 @@
     background: #f1f5f8;
     transition: background 0.3s ease;
 }
+
+
+
+.message.bot.streaming {
+    animation: fadeInUp 0.3s ease-out;
+}
+
+
