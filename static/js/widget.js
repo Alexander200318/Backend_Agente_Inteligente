@@ -170,6 +170,27 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpeechRecognition();
 });
 
+async function cargarInfoAgenteAutomatico(agentId) {
+    try {
+        const res = await fetch(`${API_BASE_URL}/agentes/${agentId}`);
+        if (res.ok) {
+            const agente = await res.json();
+            
+            // Actualizar UI silenciosamente
+            selectedAgentId = agentId;
+            selectedAgentName = agente.nombre_agente;
+            agentDisplayName.textContent = agente.nombre_agente;
+            selectedAgentInfo.classList.add('active');
+            
+            console.log('✅ Agente cargado automáticamente:', agente.nombre_agente);
+        }
+    } catch (error) {
+        console.error('Error cargando agente:', error);
+    }
+}
+
+
+
 // ==================== 🔥 SPEECH RECOGNITION ====================
 function initSpeechRecognition() {
     console.log('🔧 [INIT] Iniciando configuración de Speech Recognition...');
@@ -592,13 +613,33 @@ function seleccionarAgente(card, agentId, agentName) {
     }
 }
 
+
+
+
+async function cargarMensajeBienvenida(agentId) {
+    try {
+        const res = await fetch(`${API_BASE_URL}/agentes/${agentId}/welcome`);
+        if (res.ok) {
+            const data = await res.json();
+            addBotMessage(data.mensaje_bienvenida);
+        } else {
+            // Fallback si falla el endpoint
+            addBotMessage(`Ahora estás hablando con ${selectedAgentName}. Todas tus consultas serán atendidas por este agente especializado.`);
+        }
+    } catch (error) {
+        console.error('Error cargando bienvenida:', error);
+        addBotMessage(`Ahora estás hablando con ${selectedAgentName}. ¿En qué puedo ayudarte?`);
+    }
+}
+
 function mostrarInfoAgente() {
     if (selectedAgentName) {
         agentDisplayName.textContent = selectedAgentName;
         selectedAgentInfo.classList.add('active');
         agentSelector.classList.remove('show');
         toggleAgentsBtn.classList.remove('active');
-        addBotMessage(`Ahora estás hablando con ${selectedAgentName}. Todas tus consultas serán atendidas por este agente especializado.`);
+        
+        cargarMensajeBienvenida(selectedAgentId);
     }
 }
 
@@ -660,8 +701,14 @@ async function cargarAgentes() {
 }
 
 // ==================== FUNCIONES ====================
-function inicializarChat() {
-    addBotMessage('¡Hola! Soy el asistente virtual de TEC AZUAY. ¿En qué puedo ayudarte hoy?');
+async function inicializarChat() {
+    // 🔥 Si hay agente seleccionado, usar su bienvenida
+    if (selectedAgentId) {
+        await cargarMensajeBienvenida(selectedAgentId);
+    } else {
+        // Mensaje genérico cuando no hay agente
+        addBotMessage('¡Hola! Soy el asistente virtual de TEC AZUAY. ¿En qué puedo ayudarte hoy?');
+    }
 }
 
 // ==================== ENVIAR MENSAJE CON TIMEOUT Y RETRY ====================
@@ -857,6 +904,10 @@ async function processStream(response) {
                             
                         case 'classification':
                             console.log('🎯 Agente clasificado:', event.agent_id);
+                            
+                            if (!selectedAgentId && event.agent_id) {
+                                cargarInfoAgenteAutomatico(event.agent_id);
+                            }
                             break;
                             
                         case 'token':

@@ -22,7 +22,21 @@ def build_system_prompt(agente: AgenteVirtual) -> str:
 **Descripción:** {agente.descripcion or 'Asistente virtual'}
 
 **Instrucciones adicionales:**
-{agente.prompt_especializado or ''}
+{agente.prompt_especializado or ''}"""
+    
+    # 🔥 AGREGAR DESPEDIDA
+    if agente.mensaje_despedida:
+        base_prompt += f"""
+
+**REGLA DE DESPEDIDA:**
+Cuando el usuario se despida usando palabras como: "gracias", "adiós", "chao", "hasta luego", "nos vemos", "bye", "muchas gracias",
+responde ÚNICAMENTE con este mensaje exacto:
+"{agente.mensaje_despedida}"
+
+NO agregues nada más después del mensaje de despedida.
+"""
+    
+    base_prompt += """
 
 **Reglas importantes:**
 - NO inventes información que no esté en el CONTEXTO proporcionado

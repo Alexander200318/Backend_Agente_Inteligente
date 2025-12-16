@@ -28,3 +28,25 @@ def build_agent_model(id_agente: int, db: Session = Depends(get_db)):
 def rebuild_agents_index(db: Session = Depends(get_db)):
     classifier = AgentClassifier(db)
     return classifier.build_index()
+
+@router.get("/agentes/{id_agente}/welcome")
+async def get_welcome_message(id_agente: int, db: Session = Depends(get_db)):
+    """Obtener mensaje de bienvenida del agente"""
+    agente = db.query(AgenteVirtual).filter(
+        AgenteVirtual.id_agente == id_agente,
+        AgenteVirtual.activo == True
+    ).first()
+    
+    if not agente:
+        raise HTTPException(404, "Agente no encontrado")
+    
+    # Usar mensaje_bienvenida de BD o generar uno por defecto
+    mensaje = agente.mensaje_bienvenida
+    if not mensaje:
+        mensaje = f"¡Hola! Soy {agente.nombre_agente}, tu asistente especializado en {agente.area_especialidad or 'ayudarte'}. ¿En qué puedo asistirte hoy?"
+    
+    return {
+        "mensaje_bienvenida": mensaje,
+        "nombre_agente": agente.nombre_agente,
+        "area_especialidad": agente.area_especialidad
+    }
