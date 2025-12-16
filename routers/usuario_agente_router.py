@@ -34,7 +34,7 @@ def revocar_acceso(id_usuario_agente: int, db: Session = Depends(get_db)):
     service = UsuarioAgenteService(db)
     return service.revocar_acceso(id_usuario_agente)
 
-# 🔥 NUEVO: Verificar permisos de un usuario sobre un agente específico
+# Verificar permisos de un usuario sobre un agente específico
 @router.get("/verificar/{id_usuario}/{id_agente}", status_code=status.HTTP_200_OK)
 def verificar_permisos_usuario_agente(
     id_usuario: int,
@@ -75,7 +75,7 @@ def verificar_permisos_usuario_agente(
         "fecha_asignacion": permisos.fecha_asignacion.isoformat() if permisos.fecha_asignacion else None
     }
 
-# 🔥 NUEVO: Listar todos los agentes accesibles por un usuario
+# Listar todos los agentes accesibles por un usuario
 @router.get("/usuario/{id_usuario}/agentes-accesibles", status_code=status.HTTP_200_OK)
 def listar_agentes_accesibles(
     id_usuario: int,
@@ -93,3 +93,49 @@ def listar_agentes_accesibles(
         "agentes_accesibles": ids_agentes,
         "total_agentes": len(ids_agentes)
     }
+
+# Obtener permisos de un usuario para un agente específico
+@router.get("/usuario/{id_usuario}/agente/{id_agente}", response_model=UsuarioAgenteResponse)
+def obtener_permisos_usuario_agente(
+    id_usuario: int,
+    id_agente: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene los permisos de un usuario sobre un agente específico.
+    Retorna la asignación completa con todos los permisos.
+    """
+    service = UsuarioAgenteService(db)
+    asignacion = service.obtener_por_usuario_agente(id_usuario, id_agente)
+    
+    if not asignacion:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontró asignación para usuario {id_usuario} y agente {id_agente}"
+        )
+    
+    return asignacion
+
+
+# Actualizar permisos de un usuario para un agente específico
+@router.put("/usuario/{id_usuario}/agente/{id_agente}", response_model=UsuarioAgenteResponse)
+def actualizar_permisos_usuario_agente(
+    id_usuario: int,
+    id_agente: int,
+    data: UsuarioAgenteUpdate,
+    db: Session = Depends(get_db)
+):
+    """
+    Actualiza los permisos de un usuario sobre un agente específico.
+    Permite modificar permisos individuales sin conocer el id_usuario_agente.
+    """
+    service = UsuarioAgenteService(db)
+    asignacion_actualizada = service.actualizar_por_usuario_agente(id_usuario, id_agente, data)
+    
+    if not asignacion_actualizada:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontró asignación para usuario {id_usuario} y agente {id_agente}"
+        )
+    
+    return asignacion_actualizada

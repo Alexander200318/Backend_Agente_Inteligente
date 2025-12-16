@@ -49,3 +49,24 @@ class UsuarioAgenteService:
         """
         asignaciones = self.repo.get_by_usuario(id_usuario, activo=True)
         return [asig.id_agente for asig in asignaciones if asig.puede_ver_contenido]
+    
+    # ✅ AGREGAR ESTOS DOS MÉTODOS AQUÍ:
+    def obtener_por_usuario_agente(self, id_usuario: int, id_agente: int):
+        """
+        Obtiene la asignación de un usuario a un agente específico.
+        """
+        return self.repo.get_permisos_usuario_agente(id_usuario, id_agente)
+
+    def actualizar_por_usuario_agente(self, id_usuario: int, id_agente: int, data: UsuarioAgenteUpdate):
+        """
+        Actualiza los permisos de un usuario sobre un agente específico.
+        Busca la asignación por id_usuario e id_agente, luego actualiza.
+        """
+        # Buscar la asignación
+        asignacion = self.repo.get_by_usuario_agente(id_usuario, id_agente)
+        
+        if not asignacion:
+            return None
+        
+        # Actualizar usando el ID de la asignación
+        return self.repo.update(asignacion.id_usuario_agente, data)

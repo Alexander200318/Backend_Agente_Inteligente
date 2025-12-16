@@ -78,3 +78,27 @@ class UsuarioAgenteRepository:
         except SQLAlchemyError as e:
             self.db.rollback()
             raise DatabaseException(str(e))
+    
+    # ✅ ESTE MÉTODO ES EL QUE FALTA
+    def get_permisos_usuario_agente(self, id_usuario: int, id_agente: int) -> Optional[UsuarioAgente]:
+        """
+        Obtiene los permisos activos de un usuario sobre un agente específico.
+        Retorna None si no existe asignación o está inactiva.
+        """
+        return self.db.query(UsuarioAgente).filter(
+            UsuarioAgente.id_usuario == id_usuario,
+            UsuarioAgente.id_agente == id_agente,
+            UsuarioAgente.activo == True
+        ).first()
+    
+    # Verificar si un usuario tiene un permiso específico
+    def tiene_permiso(self, id_usuario: int, id_agente: int, permiso: str) -> bool:
+        """
+        Verifica si un usuario tiene un permiso específico sobre un agente.
+        """
+        asignacion = self.get_permisos_usuario_agente(id_usuario, id_agente)
+        
+        if not asignacion:
+            return False
+        
+        return getattr(asignacion, permiso, False) == True
