@@ -198,7 +198,8 @@ from routers import (
     persona_router,
     widget_router,
     usuario_rol_router,
-    aseguramiento_router
+    aseguramiento_router,
+    escalamiento_router
 )
 
 # Incluir routers de API con prefix /api/v1
@@ -223,6 +224,7 @@ app.include_router(usuario_rol_router.router, prefix="/api/v1")
 app.include_router(aseguramiento_router.router, prefix="/api/v1")
 # Incluir router del widget SIN prefix (acceso directo a /widget y /admin)
 app.include_router(widget_router.router, tags=["Widget"])
+app.include_router(escalamiento_router.router, prefix="/api/v1")
 
 # ==================== HEALTH CHECK ====================
 
@@ -355,3 +357,43 @@ async def check_user_dev(username: str, db: Session = Depends(get_db)):
             for r in roles
         ]
     }
+
+
+
+
+
+
+# INTEGRACIÓN EN TU main.py EXISTENTE
+# Agrega estas líneas a tu archivo main.py
+
+from database.mongodb import init_mongodb, close_mongodb
+
+# ... tu código existente ...
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Evento de inicio de la aplicación
+    """
+    print("🚀 Iniciando aplicación...")
+    
+    # Inicializar MongoDB
+    await init_mongodb()
+    
+    # ... tus otras inicializaciones ...
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Evento de cierre de la aplicación
+    """
+    print("👋 Cerrando aplicación...")
+    
+    # Cerrar MongoDB
+    await close_mongodb()
+    
+    # ... tus otros cierres ...
+
+
+# NOTA: Si ya tienes eventos startup/shutdown, solo agrega las llamadas
+# a init_mongodb() y close_mongodb() dentro de ellos

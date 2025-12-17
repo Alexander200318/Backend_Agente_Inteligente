@@ -1,4 +1,4 @@
-# routers/chat_router.py (ACTUALIZADO)
+# routers/chat_router.py (CORREGIDO)
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -15,8 +15,8 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 class ChatRequest(BaseModel):
     agent_id: int
     message: str
-    session_id: str  # ← AGREGAR (obligatorio)
-    origin: Optional[str] = "web"  # ← AGREGAR (web/mobile/widget)
+    session_id: str
+    origin: Optional[str] = "web"
     k: Optional[int] = None
     use_reranking: Optional[bool] = None
     temperatura: Optional[float] = None
@@ -31,6 +31,8 @@ def chat_with_agent(payload: ChatRequest, db: Session = Depends(get_db)):
         res = service.chat_with_agent(
             id_agente=payload.agent_id,
             pregunta=payload.message,
+            session_id=payload.session_id,
+            origin=payload.origin,
             k=payload.k,
             use_reranking=payload.use_reranking,
             temperatura=payload.temperatura,
@@ -41,21 +43,22 @@ def chat_with_agent(payload: ChatRequest, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 🔥 Endpoint CON streaming (MEJORADO - Opción 2)
+# 🔥 Endpoint CON streaming (CORREGIDO)
 @router.post("/agent/stream")
 async def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get_db)):
     service = OllamaAgentService(db)
     
     async def event_generator():
         last_event_time = datetime.now()
-        heartbeat_interval = 15  # segundos
+        heartbeat_interval = 15
         
         try:
-            for event in service.chat_with_agent_stream(
+            # 🔥 CORREGIDO: Usar async for
+            async for event in service.chat_with_agent_stream(
                 id_agente=payload.agent_id,
                 pregunta=payload.message,
-                session_id=payload.session_id,  # ← AGREGAR
-                origin=payload.origin, 
+                session_id=payload.session_id,
+                origin=payload.origin,
                 k=payload.k,
                 use_reranking=payload.use_reranking,
                 temperatura=payload.temperatura,
@@ -65,8 +68,8 @@ async def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get
                 yield f"data: {safe_json_dumps(event)}\n\n"
                 last_event_time = datetime.now()
                 
-                # Heartbeat opcional (solo si tarda mucho)
-                await asyncio.sleep(0)  # Permite other tasks
+                # Heartbeat
+                await asyncio.sleep(0)
                 
                 if (datetime.now() - last_event_time).seconds > heartbeat_interval:
                     yield f": heartbeat\n\n"
@@ -84,7 +87,6 @@ async def chat_with_agent_stream(payload: ChatRequest, db: Session = Depends(get
             yield f"data: {safe_json_dumps(error_event)}\n\n"
         
         finally:
-            # Cerrar conexión limpiamente
             yield "data: [DONE]\n\n"
     
     return StreamingResponse(

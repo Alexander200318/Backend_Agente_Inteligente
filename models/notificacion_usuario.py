@@ -1,3 +1,4 @@
+# notificacion_usuario.py
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Enum, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func

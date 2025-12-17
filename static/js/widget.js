@@ -170,24 +170,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpeechRecognition();
 });
 
-async function cargarInfoAgenteAutomatico(agentId) {
-    try {
-        const res = await fetch(`${API_BASE_URL}/agentes/${agentId}`);
-        if (res.ok) {
-            const agente = await res.json();
-            
-            // Actualizar UI silenciosamente
-            selectedAgentId = agentId;
-            selectedAgentName = agente.nombre_agente;
-            agentDisplayName.textContent = agente.nombre_agente;
-            selectedAgentInfo.classList.add('active');
-            
-            console.log('✅ Agente cargado automáticamente:', agente.nombre_agente);
-        }
-    } catch (error) {
-        console.error('Error cargando agente:', error);
-    }
-}
 
 
 
@@ -905,8 +887,9 @@ async function processStream(response) {
                         case 'classification':
                             console.log('🎯 Agente clasificado:', event.agent_id);
                             
-                            if (!selectedAgentId && event.agent_id) {
-                                cargarInfoAgenteAutomatico(event.agent_id);
+                            // 🔥 En modo auto NO se mantiene agente seleccionado
+                            if (event.stateless) {
+                                console.log('📌 Modo stateless: agente temporal para esta pregunta');
                             }
                             break;
                             
@@ -955,9 +938,15 @@ async function processStream(response) {
                             break;
                             
                         case 'error':
-                            clearInterval(heartbeatCheck);
                             console.error('❌', event.content);
                             typingIndicator.classList.remove('active');
+                            
+                            // 🔥 Si es error de escalamiento, mostrar en chat
+                            if (event.content.includes('seleccionar un agente específico')) {
+                                addBotMessage(event.content);
+                                return; // No lanzar error
+                            }
+                            
                             throw new Error(event.content);
                     }
                     
