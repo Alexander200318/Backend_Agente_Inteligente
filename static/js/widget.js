@@ -1,13 +1,18 @@
 // static/js/widget.js
 
+// 🔥 VARIABLES GLOBALES - DECLARAR AL INICIO
+let websocket = null;
+let isEscalated = false;
+let humanAgentName = null;
+
 (function() {
     'use strict';
     
     // Bloquear errores de extensiones
     const originalError = console.error;
+
     console.error = function(...args) {
         const msg = args.join(' ');
-        // Ignorar errores conocidos de extensiones de IA
         if (msg.includes('Cannot determine language') || 
             msg.includes('content-all.js') ||
             msg.includes('extension://')) {
@@ -16,7 +21,6 @@
         originalError.apply(console, args);
     };
     
-    // Capturar errores globales
     window.addEventListener('error', function(e) {
         if (e.filename && (
             e.filename.includes('extension://') || 
@@ -30,7 +34,6 @@
         }
     }, true);
     
-    // Capturar promesas rechazadas
     window.addEventListener('unhandledrejection', function(e) {
         if (e.reason && e.reason.stack && (
             e.reason.stack.includes('content-all.js') ||
@@ -48,8 +51,6 @@
 })();
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
-
-// 🔥 Session por navegador (web). El móvil usará otro session_id.
 const SESSION_STORAGE_KEY = 'tecai_session_id';
 
 let SESSION_ID = null;
@@ -70,22 +71,18 @@ if (!SESSION_ID) {
 
 console.log('🆔 SESSION_ID usado por este widget:', SESSION_ID);
 
-
 // Variables globales
 let speechSynthesis = window.speechSynthesis;
 let availableVoices = [];
-
-// 🔥 Variables para Speech Recognition
 let recognition = null;
 let isListening = false;
-let startTimeout = null; // 🔥 NUEVO: timeout de seguridad
+let startTimeout = null;
 
 function initVoices() {
     availableVoices = speechSynthesis.getVoices();
-    console.log('Voces disponibles:', availableVoices.length, availableVoices.map(v => `${v.name} (${v.lang})`));
+    console.log('Voces disponibles:', availableVoices.length);
 }
 
-// Intentar cargar voces múltiples veces
 speechSynthesis.onvoiceschanged = initVoices;
 initVoices();
 setTimeout(initVoices, 100);
@@ -95,11 +92,7 @@ let chatButton, chatContainer, closeChat, chatMessages, chatInput, sendButton, t
 let selectedAgentId = null;
 let selectedAgentName = null;
 let voiceEnabled = false;
-
-// 🔥 Variable para controlar streaming
 let currentStreamController = null;
-
-// 🔥 Variable para evitar llamadas múltiples
 let isStarting = false;
 
 // ==================== INICIALIZACIÓN ====================
@@ -130,6 +123,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     closeChat.addEventListener('click', () => {
         chatContainer.classList.remove('active');
+        if (websocket) {
+            websocket.close();
+            websocket = null;
+        }
     });
 
     sendButton.addEventListener('click', sendMessage);
@@ -166,11 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
     });
 
-    // 🔥 NUEVO: Inicializar Speech Recognition
     initSpeechRecognition();
 });
-
-
 
 
 // ==================== 🔥 SPEECH RECOGNITION ====================
@@ -695,8 +689,23 @@ async function inicializarChat() {
 
 // ==================== ENVIAR MENSAJE CON TIMEOUT Y RETRY ====================
 async function sendMessage() {
+    console.log("📩 CLICK ENVIAR detectado", { 
+    sendButtonExists: !!sendButton,
+    chatInputExists: !!chatInput,
+    value: chatInput?.value
+  });
+
     const mensaje = chatInput.value.trim();
     if (!mensaje) return;
+
+    // 🔥 AGREGAR ESTA VERIFICACIÓN:
+    if (isEscalated && websocket && websocket.readyState === WebSocket.OPEN) {
+        // Enviar por WebSocket
+        addUserMessage(mensaje);  // ← AGREGAR ESTA LÍNEA
+        chatInput.value = '';     // ← AGREGAR ESTA LÍNEA
+        sendMessageViaWebSocket(mensaje);
+        return;
+    }
 
     // Cancelar streaming anterior si existe
     if (currentStreamController) {
@@ -706,6 +715,10 @@ async function sendMessage() {
 
     addUserMessage(mensaje);
     chatInput.value = '';
+
+
+
+
     sendButton.disabled = true;
     typingIndicator.classList.add('active');
 
@@ -866,7 +879,7 @@ async function processStream(response) {
                 
                 try {
                     const jsonStr = line.substring(6).trim();
-                    if (!jsonStr) continue;
+                    if (!jsonStr || jsonStr === '[DONE]') continue;
                     
                     const event = JSON.parse(jsonStr);
 
@@ -936,6 +949,17 @@ async function processStream(response) {
                             typingIndicator.classList.remove('active');
                             speakText(fullResponse);
                             break;
+
+
+                        case 'escalamiento':
+                            console.log('🔔 Conversación escalada');
+                            addBotMessage(event.content);
+                            isEscalated = true;
+                            humanAgentName = event.metadata?.usuario_nombre || "Agente humano";
+                            connectWebSocket(SESSION_ID);  // ← SESSION_ID (variable global)
+                            mostrarIndicadorEscalamiento(humanAgentName);
+                            break;
+                          
                             
                         case 'error':
                             console.error('❌', event.content);
@@ -959,10 +983,12 @@ async function processStream(response) {
         if (buffer.trim() && buffer.startsWith('data: ')) {
             try {
                 const jsonStr = buffer.substring(6).trim();
-                const event = JSON.parse(jsonStr);
-                
-                if (event.type === 'done') {
-                    console.log('✅ Evento final procesado');
+                if (jsonStr && jsonStr !== '[DONE]') {
+                    const event = JSON.parse(jsonStr);
+                    
+                    if (event.type === 'done') {
+                        console.log('✅ Evento final procesado');
+                    }
                 }
             } catch (e) {
                 console.error('❌ Error en buffer final:', e);
@@ -977,6 +1003,213 @@ async function processStream(response) {
         typingIndicator.classList.remove('active');
     }
 }
+
+
+function connectWebSocket(sessionId) {
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+        console.log('⚠️ WebSocket ya conectado');
+        return;
+    }
+    
+    const wsUrl = `ws://localhost:8000/ws/chat/${sessionId}`;
+    console.log('🔌 Conectando WebSocket:', wsUrl);
+    
+    websocket = new WebSocket(wsUrl);
+    
+    websocket.onopen = function(e) {
+        console.log('✅ WebSocket conectado');
+        
+        // Enviar join
+        websocket.send(JSON.stringify({
+            type: 'join',
+            role: 'user'
+        }));
+    };
+    
+    websocket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        console.log('📨 WebSocket mensaje:', data);
+        
+        switch(data.type) {
+            case 'escalamiento_info':
+                if (data.escalado && data.usuario_nombre) {
+                    humanAgentName = data.usuario_nombre;
+                    mostrarIndicadorEscalamiento(data.usuario_nombre);
+                }
+                break;
+            
+            case 'message':
+                if (data.role === 'human_agent') {
+                    // Mensaje del humano
+                    addHumanMessage(data.content, data.user_name);
+                    speakText(data.content);
+                }
+                break;
+            
+            case 'typing':
+                if (data.is_typing) {
+                    mostrarIndicadorEscribiendo(data.user_name);
+                } else {
+                    ocultarIndicadorEscribiendo();
+                }
+                break;
+            
+            case 'user_joined':
+                if (data.role === 'human') {
+                    humanAgentName = data.user_name;
+                    addSystemMessage(`👨‍💼 ${data.user_name} se ha unido a la conversación`);
+                    mostrarIndicadorEscalamiento(data.user_name);
+                }
+                break;
+        }
+    };
+    
+    websocket.onerror = function(error) {
+        console.error('❌ WebSocket error:', error);
+    };
+    
+    websocket.onclose = function(event) {
+        console.log('🔌 WebSocket desconectado');
+        websocket = null;
+    };
+}
+
+function sendMessageViaWebSocket(content) {
+    if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+        console.error('❌ WebSocket no conectado');
+        return;
+    }
+    
+    websocket.send(JSON.stringify({
+        type: 'message',
+        content: content
+    }));
+}
+
+function mostrarIndicadorEscalamiento(nombreHumano) {
+    // Crear o actualizar indicador en la UI
+    let indicator = document.getElementById('human-agent-indicator');
+    
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'human-agent-indicator';
+        indicator.style.cssText = `
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+            animation: slideIn 0.3s ease;
+        `;
+        
+        chatMessages.insertBefore(indicator, chatMessages.firstChild);
+    }
+    
+    indicator.innerHTML = `
+        <span style="font-size: 24px;">👨‍💼</span>
+        <div>
+            <div style="font-weight: 600;">${nombreHumano}</div>
+            <div style="font-size: 12px; opacity: 0.9;">te está atendiendo</div>
+        </div>
+        <div style="margin-left: auto;">
+            <div class="pulse-dot"></div>
+        </div>
+    `;
+    
+    // Agregar estilos de animación si no existen
+    if (!document.getElementById('human-indicator-styles')) {
+        const style = document.createElement('style');
+        style.id = 'human-indicator-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateY(-20px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+            .pulse-dot {
+                width: 8px;
+                height: 8px;
+                background: #4ade80;
+                border-radius: 50%;
+                animation: pulse 2s infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+function addHumanMessage(text, userName) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message bot human-agent';
+    messageDiv.innerHTML = `
+        <div class="message-content">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                <span style="font-size: 18px;">👨‍💼</span>
+                <strong style="color: #667eea;">${userName}</strong>
+            </div>
+            ${formatBotMessage(text)}
+            <div class="message-time">${getCurrentTime()}</div>
+        </div>
+    `;
+    chatMessages.appendChild(messageDiv);
+    scrollToBottom();
+}
+
+function addSystemMessage(text) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message system';
+    messageDiv.innerHTML = `
+        <div class="message-content" style="text-align: center; font-style: italic; color: #666;">
+            ${text}
+            <div class="message-time">${getCurrentTime()}</div>
+        </div>
+    `;
+    chatMessages.appendChild(messageDiv);
+    scrollToBottom();
+}
+
+function mostrarIndicadorEscribiendo(userName) {
+    let indicator = document.getElementById('typing-indicator-human');
+    
+    if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.id = 'typing-indicator-human';
+        indicator.className = 'message bot';
+        indicator.innerHTML = `
+            <div class="message-content">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 18px;">👨‍💼</span>
+                    <strong style="color: #667eea;">${userName}</strong>
+                </div>
+                <div class="typing-dots">
+                    <span></span><span></span><span></span>
+                </div>
+            </div>
+        `;
+        chatMessages.appendChild(indicator);
+        scrollToBottom();
+    }
+}
+
+function ocultarIndicadorEscribiendo() {
+    const indicator = document.getElementById('typing-indicator-human');
+    if (indicator) {
+        indicator.remove();
+    }
+}
+
+
+
+
+
 
 function addUserMessage(text) {
     const messageDiv = document.createElement('div');

@@ -20,6 +20,9 @@ from services.escalamiento_service import EscalamientoService
 from services.conversation_service import ConversationService
 # from dependencies.auth import get_current_user  # ← Descomentar cuando tengas auth
 # from models.usuario import Usuario  # ← Descomentar cuando tengas auth
+import logging
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter(
     prefix="/escalamiento",
@@ -160,48 +163,49 @@ async def obtener_conversacion_detalle(
 async def responder_conversacion(
     session_id: str,
     request: RespuestaHumanoRequest,
-    db: Session = Depends(get_db),
-    # current_user: Usuario = Depends(get_current_user)  # ← Descomentar con auth
+    db: Session = Depends(get_db)
 ):
-    """
-    Agrega una respuesta de humano a la conversación
+    """Humano responde a conversación escalada"""
+    escalamiento_service = EscalamientoService(db)
     
-    Path params:
-    - session_id: ID de la sesión
-    
-    Body:
-    - mensaje: Texto de la respuesta
-    - id_usuario: ID del usuario (temporal, vendrá del token)
-    - nombre_usuario: Nombre del usuario (temporal, vendrá del token)
-    
-    Returns:
-        Confirmación de mensaje agregado
-    """
     try:
-        service = EscalamientoService(db)
-        
-        # TODO: Cuando tengas auth, usar current_user
-        # id_usuario = current_user.id_usuario
-        # nombre_usuario = f"{current_user.persona.nombre} {current_user.persona.apellido}"
-        
-        resultado = await service.responder_como_humano(
+        resultado = await escalamiento_service.responder_como_humano(
             session_id=session_id,
             mensaje=request.mensaje,
             id_usuario=request.id_usuario,
             nombre_usuario=request.nombre_usuario
         )
         
-        return {
-            "success": True,
-            **resultado
-        }
-        
+        if resultado["success"]:
+            # 🔥 AGREGAR ESTAS LÍNEAS PARA WEBSOCKET BROADCAST:
+            from services.websocket_manager import manager
+            
+            # Broadcast mensaje a todos los conectados
+            await manager.broadcast({
+                "type": "message",
+                "role": "human_agent",
+                "content": request.mensaje,
+                "user_id": request.id_usuario,
+                "user_name": request.nombre_usuario,
+                "timestamp": datetime.utcnow().isoformat()
+            }, session_id)
+            
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "ok": True,
+                    "message": "Respuesta enviada y transmitida en tiempo real",
+                    "total_mensajes": resultado.get("total_mensajes"),
+                    "broadcast": True  # 🔥 Indicar que se hizo broadcast
+                }
+            )
+        else:
+            raise HTTPException(status_code=400, detail="Error enviando respuesta")
+            
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error respondiendo conversación: {str(e)}"
-        )
-
+        logger.error(f"Error en responder_conversacion: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 @router.post("/conversacion/{session_id}/resolver")
 async def marcar_como_resuelta(

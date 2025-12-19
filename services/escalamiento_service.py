@@ -20,6 +20,9 @@ from models.usuario import Usuario
 from models.persona import Persona
 from services.conversation_service import ConversationService
 from models.conversation_mongo import ConversationUpdate, ConversationStatus, MessageCreate, MessageRole
+import random
+from models.usuario_rol import UsuarioRol
+from models.rol import Rol
 
 logger = logging.getLogger(__name__)
 
@@ -167,32 +170,46 @@ class EscalamientoService:
             logger.error(f"❌ Error escalando conversación: {e}")
             raise
     
-    def _obtener_usuarios_departamento(self, id_departamento: Optional[int]) -> List[Usuario]:
+    def _obtener_usuarios_departamento(self, id_departamento: int) -> List[Usuario]:
         """
-        Obtiene usuarios activos del departamento
-        
-        Args:
-            id_departamento: ID del departamento
-            
-        Returns:
-            Lista de usuarios disponibles
+        Obtiene UN usuario funcionario aleatorio del departamento
+        Solo usuarios con nivel_jerarquia = 3 (Funcionario)
         """
-        if not id_departamento:
-            return []
-        
         try:
-            usuarios = self.db.query(Usuario).join(Persona).filter(
+            # Obtener TODOS los funcionarios del departamento
+            funcionarios = self.db.query(Usuario).join(
+                Persona, Usuario.id_persona == Persona.id_persona
+            ).join(
+                UsuarioRol, Usuario.id_usuario == UsuarioRol.id_usuario
+            ).join(
+                Rol, UsuarioRol.id_rol == Rol.id_rol
+            ).filter(
                 Persona.id_departamento == id_departamento,
                 Usuario.estado == 'activo',
-                Persona.estado == 'activo'
-            ).all()
+                Persona.estado == 'activo',
+                UsuarioRol.activo == True,
+                Rol.activo == True,
+                Rol.nivel_jerarquia == 3  # ← SOLO FUNCIONARIOS
+            ).distinct().all()
             
-            logger.info(f"📋 Usuarios encontrados en departamento {id_departamento}: {len(usuarios)}")
-            return usuarios
+            if not funcionarios:
+                logger.warning(f"No hay funcionarios disponibles en departamento {id_departamento}")
+                return []
+            
+            # Seleccionar UNO aleatorio
+            funcionario_seleccionado = random.choice(funcionarios)
+            logger.info(f"✅ Funcionario seleccionado: {funcionario_seleccionado.username} (ID: {funcionario_seleccionado.id_usuario})")
+            
+            return [funcionario_seleccionado]  # ← Retornar lista con 1 solo usuario
             
         except Exception as e:
-            logger.error(f"❌ Error obteniendo usuarios del departamento: {e}")
+            logger.error(f"Error obteniendo funcionario del departamento: {e}")
             return []
+
+
+
+
+
     
     def _actualizar_conversacion_sync(
         self,
