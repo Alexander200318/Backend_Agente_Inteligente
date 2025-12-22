@@ -418,3 +418,65 @@ class ConversationService:
         except Exception as e:
             logger.error(f"❌ Error eliminando conversación: {e}")
             raise
+
+
+ 
+    @staticmethod
+    async def get_inactive_conversations(
+        tiempo_limite: datetime,
+        estados: List[ConversationStatus]
+    ) -> List[Dict]:
+        """
+        Obtener conversaciones inactivas
+        
+        Args:
+            tiempo_limite: Conversaciones sin actividad desde esta fecha
+            estados: Lista de estados a considerar
+            
+        Returns:
+            Lista de conversaciones inactivas
+        """
+        try:
+            collection = await get_conversations_collection()
+            
+            # Convertir enums a strings para la query
+            estados_str = [e.value for e in estados]
+            
+            # Buscar conversaciones con última actualización antes del tiempo límite
+            cursor = collection.find({
+                "metadata.estado": {"$in": estados_str},
+                "updated_at": {"$lt": tiempo_limite}
+            })
+            
+            conversaciones = []
+            async for conv in cursor:
+                conv['_id'] = str(conv['_id'])
+                conversaciones.append(conv)
+            
+            logger.info(f"📊 Encontradas {len(conversaciones)} conversaciones inactivas")
+            return conversaciones
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo conversaciones inactivas: {e}")
+            return []
+        
+
+    @staticmethod
+    async def update_conversation(
+        session_id: str,
+        update_data: ConversationUpdate
+    ) -> ConversationResponse:
+        """
+        Alias de update_conversation_status para compatibilidad
+        
+        Args:
+            session_id: ID de la sesión
+            update_data: Datos a actualizar
+            
+        Returns:
+            ConversationResponse actualizada
+        """
+        return await ConversationService.update_conversation_status(
+            session_id=session_id,
+            update_data=update_data
+        )

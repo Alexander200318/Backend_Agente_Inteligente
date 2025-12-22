@@ -18,7 +18,7 @@ class ConversacionSync(Base):
     id_conversacion_sync = Column(Integer, primary_key=True, index=True, autoincrement=True)
     
     # Identificador de MongoDB
-    mongodb_conversation_id = Column(String(24), unique=True, nullable=False, index=True)
+    mongodb_conversation_id = Column(String(80), unique=True, nullable=False, index=True)
     
     # Foreign Keys
     id_visitante = Column(

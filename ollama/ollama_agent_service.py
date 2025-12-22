@@ -4,7 +4,7 @@ from ollama.prompt_builder import build_system_prompt, build_chat_prompt
 from rag.rag_service import RAGService
 from sqlalchemy.orm import Session
 from models.agente_virtual import AgenteVirtual
-from typing import Dict, Any, List, Optional, Generator
+from typing import Dict, Any, List, Optional, Generator, AsyncGenerator
 from utils.session_manager import SessionManager
 
 from services.escalamiento_service import EscalamientoService
@@ -161,24 +161,26 @@ class OllamaAgentService:
             raise Exception(f"Error en Ollama: {error_msg}")
 
     # 🔥 MÉTODO CON STREAMING, ESCALAMIENTO Y SAVE_TO_MONGO
+
+
     async def chat_with_agent_stream(
         self, 
         id_agente: int, 
         pregunta: str, 
         session_id: str, 
         origin: str = "web",
-        save_to_mongo: bool = True,  # 🔥 NUEVO: Controla si guarda en MongoDB
         k: Optional[int] = None,
         use_reranking: Optional[bool] = None,
         temperatura: Optional[float] = None,
         max_tokens: Optional[int] = None
-    ) -> Generator[Dict[str, Any], None, None]:
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Chatea con agente CON streaming
         
-        Args:
-            save_to_mongo: Si True, guarda conversación y permite escalamiento
-                          Si False, solo responde (modo auto/stateless)
+        🔥 NUEVO COMPORTAMIENTO:
+        - Por defecto NO guarda en MongoDB
+        - Solo guarda cuando detecta intención de escalamiento
+        - Crea conversación al momento de escalar
         """
         
         try:
@@ -202,14 +204,22 @@ class OllamaAgentService:
                 return
             
             # ============================================
-            # PASO 2: VERIFICAR/CREAR CONVERSACIÓN EN MONGODB (SOLO SI save_to_mongo=True)
+            # PASO 2: 🔥 DETECTAR ESCALAMIENTO PRIMERO
             # ============================================
-            if save_to_mongo:
-                conversation = await ConversationService.get_conversation_by_session(session_id)
+            necesita_escalamiento = escalamiento_service.detectar_intencion_escalamiento(pregunta)
+            
+            if necesita_escalamiento:
+                logger.info(f"🔔 Escalamiento detectado en session {session_id}")
                 
-                # Si es primera vez, crear conversación en MongoDB
-                if not conversation:
-                    try:
+                # ============================================
+                # PASO 3: 🔥 CREAR CONVERSACIÓN EN MONGODB (solo al escalar)
+                # ============================================
+                try:
+                    # Verificar si ya existe conversación
+                    conversation = await ConversationService.get_conversation_by_session(session_id)
+                    
+                    if not conversation:
+                        # Crear conversación nueva
                         conversation_data = ConversationCreate(
                             session_id=session_id,
                             id_agente=id_agente,
@@ -218,65 +228,23 @@ class OllamaAgentService:
                             origin=origin
                         )
                         conversation = await ConversationService.create_conversation(conversation_data)
-
-                        # Mensaje de bienvenida si existe
-                        if agente.mensaje_bienvenida:
-                            welcome_message = MessageCreate(
-                                role=MessageRole.system,
-                                content=agente.mensaje_bienvenida
-                            )
-                            await ConversationService.add_message(session_id, welcome_message)
-
-                            # Enviar mensaje de bienvenida al usuario
-                            yield {
-                                "type": "system_message",
-                                "content": agente.mensaje_bienvenida
-                            }
-
-                        logger.info(f"✅ Nueva conversación creada en MongoDB: {session_id}")
-
-                    except Exception as e:
-                        logger.warning(f"⚠️ Error creando conversación en MongoDB: {e}")
-
-            # ============================================
-            # PASO 3: GUARDAR MENSAJE DEL USUARIO EN MONGODB (SOLO SI save_to_mongo=True)
-            # ============================================
-            if save_to_mongo:
-                try:
+                        logger.info(f"✅ Conversación creada en MongoDB por escalamiento: {session_id}")
+                    
+                    # Guardar mensaje del usuario
                     user_message = MessageCreate(
                         role=MessageRole.user,
                         content=pregunta
                     )
                     await ConversationService.add_message(session_id, user_message)
-                except Exception as e:
-                    logger.warning(f"⚠️ Error guardando mensaje en MongoDB: {e}")
-            
-            # ============================================
-            # PASO 4: DETECTAR INTENCIÓN DE ESCALAMIENTO
-            # ============================================
-            if escalamiento_service.detectar_intencion_escalamiento(pregunta):
-                logger.info(f"🔔 Escalamiento detectado en session {session_id}")
-                
-                # 🔥 VALIDACIÓN: Solo permitir escalamiento si save_to_mongo=True
-                if not save_to_mongo:
-                    yield {
-                        "type": "error",
-                        "content": "⚠️ Para hablar con un humano, primero debes seleccionar un agente específico desde el menú de agentes."
-                    }
                     
-                    yield {
-                        "type": "done",
-                        "content": "Selecciona un agente para continuar",
-                        "metadata": {
-                            "agent_id": id_agente,
-                            "escalamiento_bloqueado": True
-                        }
-                    }
-                    return
+                except Exception as e:
+                    logger.error(f"❌ Error creando conversación en MongoDB: {e}")
+                    # Continuar con escalamiento aunque falle MongoDB
                 
-                # Si save_to_mongo=True, proceder con escalamiento normal
+                # ============================================
+                # PASO 4: ESCALAR CONVERSACIÓN
+                # ============================================
                 try:
-                    # Escalar conversación
                     resultado = await escalamiento_service.escalar_conversacion(
                         session_id=session_id,
                         id_agente=id_agente,
@@ -286,10 +254,12 @@ class OllamaAgentService:
                     # Enviar mensaje de escalamiento
                     yield {
                         "type": "escalamiento",
-                        "content": agente.mensaje_derivacion or "Tu solicitud ha sido escalada a un agente humano. En breve te atenderán.",
+                        "content": agente.mensaje_derivacion or "Tu solicitud ha sido escalada...",
                         "metadata": {
                             "escalado": True,
-                            "usuarios_notificados": resultado.get("usuarios_notificados", 0)
+                            "usuarios_notificados": resultado.get("usuarios_notificados", 0),
+                            "usuario_nombre": resultado.get("funcionario_asignado", {}).get("nombre"),  # ← AGREGAR
+                            "usuario_id": resultado.get("funcionario_asignado", {}).get("id")  # ← AGREGAR
                         }
                     }
                     
@@ -301,32 +271,37 @@ class OllamaAgentService:
                             "agent_id": id_agente,
                             "agent_name": agente.nombre_agente,
                             "session_id": session_id,
-                            "escalado": True
+                            "escalado": True,
+                            "saved_to_mongo": True  # 🔥 Se guardó porque escaló
                         }
                     }
                     
-                    return  # ← IMPORTANTE: Detener el flujo normal
+                    return  # Detener flujo normal
                     
                 except Exception as e:
                     logger.error(f"❌ Error en escalamiento: {e}")
-                    # Continuar flujo normal si falla el escalamiento
+                    yield {
+                        "type": "error",
+                        "content": f"Error al escalar: {str(e)}"
+                    }
+                    return
 
             # ============================================
-            # PASO 5: APLICAR PARÁMETROS
+            # PASO 5: 🔥 FLUJO NORMAL (SIN GUARDAR EN MONGODB)
             # ============================================
+            # Aplicar parámetros
             k_final = k if k is not None else 2
             use_reranking_final = use_reranking if use_reranking is not None else False
             
             temperatura_final = temperatura if temperatura is not None else \
-                               (float(agente.temperatura) if agente.temperatura else 0.7)
+                            (float(agente.temperatura) if agente.temperatura else 0.7)
             
             max_tokens_final = max_tokens if max_tokens is not None else \
-                              (int(agente.max_tokens) if agente.max_tokens else 1000)
+                            (int(agente.max_tokens) if agente.max_tokens else 1000)
 
-            # System prompt
             system_prompt = build_system_prompt(agente)
 
-            print(f"🔗 Session: {session_id} | Origin: {origin} | Save to Mongo: {save_to_mongo}")
+            print(f"🔗 Session: {session_id} | Origin: {origin} | Sin guardar en MongoDB")
             self._session_manager.touch(session_id)
 
             # ============================================
@@ -348,7 +323,6 @@ class OllamaAgentService:
                     priority_boost_factor=0.4
                 )
                 
-                # Construir contexto
                 if results:
                     contexto_parts = []
                     for i, r in enumerate(results, 1):
@@ -368,7 +342,6 @@ class OllamaAgentService:
                 contexto = "Error al buscar información."
                 sources_count = 0
 
-            # Enviar info de contexto
             yield {
                 "type": "context",
                 "content": f"📚 Encontradas {sources_count} fuentes relevantes",
@@ -381,18 +354,15 @@ class OllamaAgentService:
             prompt = build_chat_prompt(system_prompt, contexto, pregunta)
             model_name = agente.modelo_ia or "llama3"
 
-            # Logging
             print(f"🤖 Streaming - Modelo: {model_name}")
             print(f"🌡️  Temperatura: {temperatura_final}")
             print(f"📊 Fuentes RAG: {sources_count}")
 
-            # Enviar inicio de generación
             yield {
                 "type": "status",
                 "content": "💬 Generando respuesta..."
             }
 
-            # 🔥 STREAMING de tokens desde Ollama
             full_response = ""
             
             try:
@@ -405,29 +375,14 @@ class OllamaAgentService:
                 ):
                     full_response += token
                     
-                    # Enviar cada token al frontend
                     yield {
                         "type": "token",
                         "content": token
                     }
                 
                 # ============================================
-                # PASO 8: GUARDAR RESPUESTA EN MONGODB (SOLO SI save_to_mongo=True)
+                # PASO 8: 🔥 NO GUARDAR EN MONGODB (modo normal)
                 # ============================================
-                if save_to_mongo:
-                    try:
-                        assistant_message = MessageCreate(
-                            role=MessageRole.assistant,
-                            content=full_response,
-                            sources_used=sources_count,
-                            model_used=model_name,
-                            token_count=len(full_response.split())
-                        )
-                        await ConversationService.add_message(session_id, assistant_message)
-                    except Exception as e:
-                        logger.warning(f"⚠️ Error guardando respuesta en MongoDB: {e}")
-
-                # Mensaje final
                 yield {
                     "type": "done",
                     "content": full_response,
@@ -438,7 +393,7 @@ class OllamaAgentService:
                         "origin": origin,
                         "sources_used": sources_count,
                         "model_used": model_name,
-                        "saved_to_mongo": save_to_mongo,  # 🔥 Indicar si se guardó
+                        "saved_to_mongo": False,  # 🔥 No se guardó
                         "params_used": {
                             "temperatura": temperatura_final,
                             "max_tokens": max_tokens_final,
@@ -452,7 +407,6 @@ class OllamaAgentService:
                 error_msg = str(e)
                 print(f"❌ Error con Ollama: {error_msg}")
                 
-                # Fallback con modelo base
                 if "not found" in error_msg.lower():
                     yield {
                         "type": "status",
@@ -480,6 +434,7 @@ class OllamaAgentService:
                             "agent_id": id_agente,
                             "agent_name": agente.nombre_agente,
                             "model_used": "llama3 (fallback)",
+                            "saved_to_mongo": False,
                             "warning": f"Modelo {model_name} no disponible"
                         }
                     }
@@ -492,21 +447,22 @@ class OllamaAgentService:
                 "content": str(e)
             }
 
+
     def list_available_models(self) -> List[str]:
         """Lista modelos disponibles en Ollama"""
         try:
-            models = self.client.list_models()
-            return [m.get("name", "unknown") for m in models]
+                models = self.client.list_models()
+                return [m.get("name", "unknown") for m in models]
         except Exception as e:
-            print(f"Error listando modelos: {e}")
-            return []
+                print(f"Error listando modelos: {e}")
+                return []
 
 
-def generar_session_id() -> str:
-    """
-    Genera un session_id único para nuevas conversaciones
-    
-    Returns:
-        str: UUID v4 como string
-    """
-    return str(uuid.uuid4())
+    def generar_session_id() -> str:
+            """
+            Genera un session_id único para nuevas conversaciones
+            
+            Returns:
+                str: UUID v4 como string
+            """
+            return str(uuid.uuid4())

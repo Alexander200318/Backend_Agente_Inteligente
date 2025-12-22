@@ -952,12 +952,14 @@ async function processStream(response) {
 
 
                         case 'escalamiento':
+                            console.log('🔔 Conversación escaladaa');
+                            console.log('🔍 usuario_nombre recibido:', event.metadata?.usuario_nombre);
                             console.log('🔔 Conversación escalada');
                             addBotMessage(event.content);
                             isEscalated = true;
-                            humanAgentName = event.metadata?.usuario_nombre || "Agente humano";
-                            connectWebSocket(SESSION_ID);  // ← SESSION_ID (variable global)
-                            mostrarIndicadorEscalamiento(humanAgentName);
+                            humanAgentName = event.metadata?.usuario_nombre || "Agente humano";  // ✅ YA ESTÁ
+                            connectWebSocket(SESSION_ID);
+                            mostrarIndicadorEscalamiento(humanAgentName);  // ✅ YA USA humanAgentName
                             break;
                           
                             

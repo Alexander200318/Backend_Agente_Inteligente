@@ -7,6 +7,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
 # 🔥 IMPORTAR SLOWAPI PARA RATE LIMITING
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -24,7 +26,7 @@ from exceptions.base import BaseAPIException
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manejo del ciclo de vida de la aplicación"""
-    # Startup
+    # ==================== STARTUP ====================
     print("=" * 60)
     print(f"🚀 Iniciando {settings.APP_NAME}")
     print(f"📦 Versión: {settings.APP_VERSION}")
@@ -34,13 +36,66 @@ async def lifespan(app: FastAPI):
     print(f"🔒 Rate Limiting: {settings.RATE_LIMIT_PER_MINUTE}/min (Login: {settings.RATE_LIMIT_LOGIN_PER_MINUTE}/min)")
     print("=" * 60)
     
-    # Inicializar base de datos
+    # Inicializar base de datos MySQL
     init_db()
+    
+    # 🔥 NUEVO: Inicializar MongoDB
+    from database.mongodb import init_mongodb
+    await init_mongodb()
+    print("✅ MongoDB inicializado")
+    
+    # 🔥 NUEVO: Iniciar scheduler para auto-finalización de conversaciones
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    scheduler = AsyncIOScheduler()
+    
+    async def finalizar_conversaciones_inactivas_job():
+        """Job para finalizar conversaciones inactivas cada 10 minutos"""
+        from database.database import SessionLocal
+        from services.escalamiento_service import EscalamientoService
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        db = SessionLocal()
+        
+        try:
+            service = EscalamientoService(db)
+            resultado = await service.finalizar_conversaciones_inactivas(timeout_minutos=30)
+            logger.info(f"✅ Auto-finalización ejecutada: {resultado}")
+            print(f"🧹 Conversaciones finalizadas: MongoDB={resultado['conversaciones_finalizadas_mongo']}, MySQL={resultado['conversaciones_finalizadas_mysql']}")
+        except Exception as e:
+            logger.error(f"❌ Error en auto-finalización: {e}")
+            print(f"❌ Error en auto-finalización: {e}")
+        finally:
+            db.close()
+    
+    # Programar tarea cada 10 minutos
+    scheduler.add_job(
+        finalizar_conversaciones_inactivas_job, 
+        'interval', 
+        minutes=10,
+        id='finalizar_conversaciones',
+        replace_existing=True
+    )
+    scheduler.start()
+    print("✅ Scheduler iniciado - Auto-finalización de conversaciones cada 10 minutos")
+    
+    # Guardar scheduler en app state para poder detenerlo después
+    app.state.scheduler = scheduler
     
     yield
     
-    # Shutdown
+    # ==================== SHUTDOWN ====================
     print("👋 Cerrando aplicación...")
+    
+    # 🔥 NUEVO: Detener scheduler
+    if hasattr(app.state, 'scheduler'):
+        app.state.scheduler.shutdown()
+        print("✅ Scheduler detenido")
+    
+    # 🔥 NUEVO: Cerrar MongoDB
+    from database.mongodb import close_mongodb
+    await close_mongodb()
+    print("✅ MongoDB cerrado")
 
 # ==================== RATE LIMITING ====================
 
@@ -362,40 +417,3 @@ async def check_user_dev(username: str, db: Session = Depends(get_db)):
 
 
 
-
-
-
-# INTEGRACIÓN EN TU main.py EXISTENTE
-# Agrega estas líneas a tu archivo main.py
-
-from database.mongodb import init_mongodb, close_mongodb
-
-# ... tu código existente ...
-
-@app.on_event("startup")
-async def startup_event():
-    """
-    Evento de inicio de la aplicación
-    """
-    print("🚀 Iniciando aplicación...")
-    
-    # Inicializar MongoDB
-    await init_mongodb()
-    
-    # ... tus otras inicializaciones ...
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    Evento de cierre de la aplicación
-    """
-    print("👋 Cerrando aplicación...")
-    
-    # Cerrar MongoDB
-    await close_mongodb()
-    
-    # ... tus otros cierres ...
-
-
-# NOTA: Si ya tienes eventos startup/shutdown, solo agrega las llamadas
-# a init_mongodb() y close_mongodb() dentro de ellos
