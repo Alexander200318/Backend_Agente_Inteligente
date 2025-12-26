@@ -149,6 +149,10 @@ async def listar_conversaciones_escaladas(
         )
 
 
+
+
+
+
 @router.get("/mis-conversaciones")
 async def listar_mis_conversaciones(
     id_usuario: int = Query(..., description="ID del funcionario"),
@@ -158,49 +162,24 @@ async def listar_mis_conversaciones(
 ):
     """
     Lista conversaciones asignadas a UN funcionario específico
-    
-    🔥 NUEVA FUNCIONALIDAD
-    
-    Query params:
-    - id_usuario: ID del funcionario (obligatorio)
-    - solo_activas: Solo mostrar activas/escaladas (default: True)
-    - limite: Número máximo de resultados
-    
-    Returns:
-        Lista de conversaciones asignadas al funcionario
     """
     try:
-        # Buscar conversaciones donde el usuario está escalado
-        query = db.query(ConversacionSync)
+        logger.info(f"🔍 Buscando conversaciones para usuario {id_usuario}")
         
-        if solo_activas:
-            query = query.filter(
-                ConversacionSync.estado.in_([
-                    EstadoConversacionEnum.escalada_humano,
-                    EstadoConversacionEnum.activa
-                ])
-            )
+        from services.mongo_connection import get_conversations_by_user
         
-        conversaciones_mysql = query.order_by(
-            ConversacionSync.fecha_inicio.desc()
-        ).limit(limite).all()
+        conversaciones_mongo = await get_conversations_by_user(
+            user_id=id_usuario,
+            solo_activas=solo_activas,
+            limit=limite
+        )
         
-        # Enriquecer con MongoDB y filtrar por escalado_a_usuario_id
+        logger.info(f"✅ Encontradas {len(conversaciones_mongo)} conversaciones")
+        
         mis_conversaciones = []
         
-        for conv_sync in conversaciones_mysql:
+        for mongo_conv in conversaciones_mongo:
             try:
-                mongo_conv = await ConversationService.get_conversation_by_session(
-                    conv_sync.mongodb_conversation_id
-                )
-                
-                if not mongo_conv:
-                    continue
-                
-                # 🔥 FILTRAR: Solo si está asignado a este usuario
-                if mongo_conv.metadata.escalado_a_usuario_id != id_usuario:
-                    continue
-                
                 # Calcular métricas
                 tiempo_desde_escalamiento = None
                 if mongo_conv.metadata.fecha_escalamiento:
@@ -215,17 +194,31 @@ async def listar_mis_conversaciones(
                         datetime.utcnow() - ultimo_msg.timestamp
                     ).total_seconds() / 60
                 
+                # Buscar info en MySQL
+                conv_sync = db.query(ConversacionSync).filter(
+                    ConversacionSync.mongodb_conversation_id == mongo_conv.session_id
+                ).first()
+                
+                # 🔥 FIX: Manejar role que puede ser str o Enum
+                ultimo_mensaje_role = None
+                if mongo_conv.messages:
+                    role = mongo_conv.messages[-1].role
+                    # Si ya es string, úsalo; si es Enum, obtén el value
+                    ultimo_mensaje_role = role if isinstance(role, str) else role.value
+                
                 mis_conversaciones.append({
-                    "id_conversacion_sync": conv_sync.id_conversacion_sync,
-                    "session_id": conv_sync.mongodb_conversation_id,
-                    "id_agente": conv_sync.id_agente_inicial,
+                    "id_conversacion_sync": conv_sync.id_conversacion_sync if conv_sync else None,
+                    "session_id": mongo_conv.session_id,
+                    "id_agente": mongo_conv.id_agente,
                     "agent_name": mongo_conv.agent_name,
-                    "estado": conv_sync.estado.value,
+                    "estado": mongo_conv.metadata.estado,
                     "total_mensajes": mongo_conv.metadata.total_mensajes,
                     "ultimo_mensaje": mongo_conv.messages[-1].content[:150] if mongo_conv.messages else None,
-                    "ultimo_mensaje_de": mongo_conv.messages[-1].role.value if mongo_conv.messages else None,
+                    "ultimo_mensaje_de": ultimo_mensaje_role,  # 🔥 CAMBIADO
                     "fecha_ultimo_mensaje": mongo_conv.messages[-1].timestamp.isoformat() if mongo_conv.messages else None,
                     "fecha_escalamiento": mongo_conv.metadata.fecha_escalamiento.isoformat() if mongo_conv.metadata.fecha_escalamiento else None,
+                    "escalado_a_usuario_id": mongo_conv.metadata.escalado_a_usuario_id,
+                    "escalado_a_usuario_nombre": mongo_conv.metadata.escalado_a_usuario_nombre,
                     "tiempo_espera_minutos": round(tiempo_desde_escalamiento, 1) if tiempo_desde_escalamiento else None,
                     "tiempo_sin_respuesta_minutos": round(tiempo_desde_ultima_respuesta, 1) if tiempo_desde_ultima_respuesta else None,
                     "requiere_atencion": tiempo_desde_ultima_respuesta and tiempo_desde_ultima_respuesta > 10,
@@ -233,7 +226,7 @@ async def listar_mis_conversaciones(
                 })
                 
             except Exception as e:
-                logger.warning(f"⚠️ Error procesando conversación {conv_sync.mongodb_conversation_id}: {e}")
+                logger.warning(f"⚠️ Error procesando conversación {mongo_conv.session_id}: {e}")
         
         return {
             "success": True,
@@ -244,10 +237,18 @@ async def listar_mis_conversaciones(
         
     except Exception as e:
         logger.error(f"❌ Error obteniendo mis conversaciones: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo conversaciones: {str(e)}"
         )
+
+
+
+
+
+
 
 
 # ============================================
