@@ -1135,7 +1135,122 @@ async def cambiar_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al cambiar contraseña"
         )
+@router.get("/verificar-sesion", status_code=status.HTTP_200_OK)
+async def verificar_sesion_activa(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    🔐 Verificar si la sesión actual es válida
+    
+    - Verifica que el token sea válido
+    - Verifica que el usuario exista y esté activo
+    - Devuelve información básica de la sesión
+    """
+    try:
+        # Obtener token del header Authorization
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token no proporcionado"
+            )
+        
+        token = auth_header.replace("Bearer ", "")
+        
+        # Decodificar y validar token
+        payload = decode_access_token(token)
+        if not payload:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token inválido o expirado"
+            )
+        
+        # Obtener ID de usuario del token
+        id_usuario = payload.get("sub")
+        if not id_usuario:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token mal formado"
+            )
+        
+        # Verificar que el usuario existe y está activo
+        usuario = db.query(Usuario).filter(
+            Usuario.id_usuario == int(id_usuario)
+        ).first()
+        
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Usuario no encontrado"
+            )
+        
+        if usuario.estado != "activo":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Usuario en estado: {usuario.estado}"
+            )
+        
+        # Sesión válida
+        return {
+            "valido": True,
+            "id_usuario": usuario.id_usuario,
+            "username": usuario.username,
+            "email": usuario.email,
+            "estado": usuario.estado
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error verificando sesión: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Error verificando sesión"
+        )
+        
+# En usuario_router.py, AGREGAR:
 
+@router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    🚪 Cerrar sesión del usuario
+    
+    - Registra el logout en logs
+    - Puede implementar blacklist de tokens si es necesario
+    """
+    client_ip = get_client_ip(request)
+    
+    try:
+        # Obtener token
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.replace("Bearer ", "")
+            payload = decode_access_token(token)
+            
+            if payload:
+                username = payload.get("username", "desconocido")
+                
+                log_security_event(
+                    "LOGOUT_SUCCESS",
+                    username,
+                    "Cierre de sesión exitoso",
+                    success=True,
+                    ip_address=client_ip
+                )
+        
+        return {
+            "message": "Sesión cerrada exitosamente"
+        }
+        
+    except Exception as e:
+        print(f"❌ Error en logout: {e}")
+        return {
+            "message": "Sesión cerrada"
+        }
 
 @router.post("/{id_usuario}/desbloquear", status_code=status.HTTP_200_OK)
 async def desbloquear_usuario(
