@@ -1,6 +1,6 @@
 # models/conversation_mongo.py
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
 
@@ -10,23 +10,33 @@ class MessageRole(str, Enum):
     user = "user"
     assistant = "assistant"
     system = "system"
-    human_agent = "human_agent"  # Para cuando un humano responde
+    human_agent = "human_agent"
 
 
 class Message(BaseModel):
     """Modelo de un mensaje individual"""
-    role: MessageRole
+    role: Union[MessageRole, str]  # 🔥 Acepta tanto Enum como string
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     
     # Metadata adicional
-    sources_used: Optional[int] = None  # Cuántas fuentes RAG usó
-    model_used: Optional[str] = None    # Modelo de IA usado
-    token_count: Optional[int] = None   # Tokens generados
+    sources_used: Optional[int] = None
+    model_used: Optional[str] = None
+    token_count: Optional[int] = None
     
     # Para mensajes de humano
-    user_id: Optional[int] = None       # ID del usuario humano que respondió
-    user_name: Optional[str] = None     # Nombre del usuario humano
+    user_id: Optional[int] = None
+    user_name: Optional[str] = None
+    
+    @validator('role', pre=True)
+    def validate_role(cls, v):
+        """Convierte string a MessageRole si es necesario"""
+        if isinstance(v, str):
+            try:
+                return MessageRole(v)
+            except ValueError:
+                return v  # Si no es válido, dejar como string
+        return v
     
     class Config:
         use_enum_values = True
@@ -38,14 +48,11 @@ class ConversationStatus(str, Enum):
     finalizada = "finalizada"
     abandonada = "abandonada"
     escalada_humano = "escalada_humano"
-    
-    class Config:
-        use_enum_values = True
 
 
 class ConversationMetadata(BaseModel):
     """Metadata de la conversación"""
-    estado: ConversationStatus = ConversationStatus.activa
+    estado: Union[ConversationStatus, str] = "activa"  # 🔥 Acepta tanto Enum como string
     
     # Info del visitante
     ip_origen: Optional[str] = None
@@ -67,8 +74,18 @@ class ConversationMetadata(BaseModel):
     fecha_resolucion: Optional[datetime] = None
     
     # Satisfacción
-    calificacion: Optional[int] = None  # 1-5 estrellas
+    calificacion: Optional[int] = None
     comentario_calificacion: Optional[str] = None
+    
+    @validator('estado', pre=True)
+    def validate_estado(cls, v):
+        """Convierte string a ConversationStatus si es necesario"""
+        if isinstance(v, str):
+            try:
+                return ConversationStatus(v)
+            except ValueError:
+                return v  # Si no es válido, dejar como string
+        return v
     
     class Config:
         use_enum_values = True
@@ -77,14 +94,11 @@ class ConversationMetadata(BaseModel):
 class ConversationMongo(BaseModel):
     """
     Modelo principal de conversación en MongoDB
-    
-    Este modelo representa la estructura completa de una conversación
-    almacenada en MongoDB.
     """
     # Identificadores
     session_id: str = Field(..., description="UUID único de la sesión")
     id_agente: int = Field(..., description="ID del agente virtual")
-    id_visitante: Optional[int] = None  # ID en MySQL si existe
+    id_visitante: Optional[int] = None
     
     # Información del agente
     agent_name: str
@@ -102,9 +116,6 @@ class ConversationMongo(BaseModel):
     # Auditoría
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    # MongoDB ID (se asigna automáticamente)
-    # No lo incluimos en el modelo porque Pydantic no puede validar ObjectId directamente
     
     class Config:
         json_encoders = {
@@ -148,7 +159,7 @@ class MessageCreate(BaseModel):
 
 class ConversationResponse(BaseModel):
     """Schema para respuesta de conversación"""
-    id: str  # MongoDB ObjectId como string
+    id: str
     session_id: str
     id_agente: int
     agent_name: str
@@ -185,7 +196,6 @@ class ConversationListResponse(BaseModel):
     conversations: List[ConversationResponse]
 
 
-# Modelos auxiliares para estadísticas
 class ConversationStats(BaseModel):
     """Estadísticas de conversaciones"""
     total_conversaciones: int

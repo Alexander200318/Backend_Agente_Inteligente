@@ -1,7 +1,7 @@
 # database/mongodb.py
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo import MongoClient
-from typing import Optional
+from typing import Optional, ClassVar
 import logging
 import os
 from dotenv import load_dotenv
@@ -15,9 +15,9 @@ class MongoDBManager:
     """
     Gestor de conexión a MongoDB con soporte async (Motor) y sync (PyMongo)
     """
-    client: Optional[AsyncIOMotorClient] = None
-    db: Optional[AsyncIOMotorDatabase] = None
-    sync_client: Optional[MongoClient] = None
+    client: ClassVar[Optional[AsyncIOMotorClient]] = None
+    db: ClassVar[Optional[AsyncIOMotorDatabase]] = None
+    sync_client: ClassVar[Optional[MongoClient]] = None
     
     # Configuración desde variables de entorno
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")

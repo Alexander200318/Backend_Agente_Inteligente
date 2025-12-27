@@ -1,8 +1,6 @@
 # services/conversation_service.py
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorCollection
 import logging
 
 from models.conversation_mongo import (
