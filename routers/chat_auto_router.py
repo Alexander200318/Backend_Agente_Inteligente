@@ -5,11 +5,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database.database import get_db
 from services.agent_classifier import AgentClassifier
+from services.escalamiento_service import EscalamientoService  # ← AGREGAR
 from ollama.ollama_agent_service import OllamaAgentService
 from utils.json_utils import safe_json_dumps
 from typing import Optional
 from datetime import datetime
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -23,7 +27,6 @@ class AutoChatRequest(BaseModel):
     temperatura: Optional[float] = None
     max_tokens: Optional[int] = None
 
-# ✅ Endpoint SIN streaming
 @router.post("/auto")
 def chat_auto(payload: AutoChatRequest, db: Session = Depends(get_db)):
     """
@@ -58,33 +61,53 @@ def chat_auto(payload: AutoChatRequest, db: Session = Depends(get_db)):
             **res,
             "auto_classified": True,
             "classified_agent_id": agent_id,
-            "stateless_mode": True  # 🔥 Indicar que es modo stateless
+            "stateless_mode": True
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 🔥 Endpoint CON streaming - MODO STATELESS
 @router.post("/auto/stream")
 async def chat_auto_stream(payload: AutoChatRequest, db: Session = Depends(get_db)):
     """
     Clasifica automáticamente y responde con streaming
     
-    🔥 CARACTERÍSTICAS:
-    - NO guarda conversación en MongoDB
-    - NO mantiene agente seleccionado
-    - Cada pregunta es independiente
-    - NO permite escalamiento a humano (requiere seleccionar agente)
+    🔥 MODO STATELESS:
+    - NO permite escalamiento (requiere seleccionar agente específico)
+    - Si detecta intención de escalamiento, informa que debe seleccionar agente
     """
     classifier = AgentClassifier(db)
     service = OllamaAgentService(db)
+    escalamiento_service = EscalamientoService(db)  # ← AGREGAR
     
     async def event_generator():
         last_event_time = datetime.now()
         heartbeat_interval = 15
         
         try:
-            # 1) Clasificar agente
+            # 🔥 1. DETECTAR SI QUIERE HABLAR CON HUMANO
+            quiere_humano = escalamiento_service.detectar_intencion_escalamiento(payload.message)
+            
+            if quiere_humano:
+                logger.info("⚠️ Escalamiento detectado en modo AUTO (no permitido)")
+
+                # ✅ Construir el evento FUERA del yield (igual que en chat_router.py)
+                evento_error_escalamiento = {
+                    "type": "error",
+                    "content": (
+                        "⚠️ Para hablar con un agente humano, primero debes seleccionar un agente "
+                        "específico del menú. El modo automático no permite escalamiento."
+                    ),
+                    "stateless_mode": True,
+                    "auto_mode": True
+                }
+
+                yield f"data: {safe_json_dumps(evento_error_escalamiento)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            
+            # 2. Clasificar agente
             yield f"data: {safe_json_dumps({'type': 'status', 'content': 'Clasificando agente...'})}\n\n"
             last_event_time = datetime.now()
             
@@ -95,42 +118,40 @@ async def chat_auto_stream(payload: AutoChatRequest, db: Session = Depends(get_d
                 yield "data: [DONE]\n\n"
                 return
             
-            # 2) Enviar info de clasificación
+            # 3. Enviar info de clasificación
             yield f"data: {safe_json_dumps({'type': 'classification', 'agent_id': agent_id, 'stateless': True})}\n\n"
             last_event_time = datetime.now()
             
-            # 3) 🔥 Streaming de respuesta CON save_to_mongo=False
+            # 4. Streaming de respuesta
             async for event in service.chat_with_agent_stream(
                 id_agente=int(agent_id),
                 pregunta=payload.message,
                 session_id=payload.session_id,
                 origin=payload.origin,
-                save_to_mongo=False,  # 🔥 NO GUARDAR EN MONGODB
+                save_to_mongo=False,
                 k=payload.k,
                 use_reranking=payload.use_reranking,
                 temperatura=payload.temperatura,
                 max_tokens=payload.max_tokens
             ):
-                # Agregar info de clasificación al evento final
                 if event.get("type") == "done":
                     event["auto_classified"] = True
                     event["classified_agent_id"] = agent_id
-                    event["stateless_mode"] = True  # 🔥 Indicar modo stateless
+                    event["stateless_mode"] = True
                 
                 yield f"data: {safe_json_dumps(event)}\n\n"
                 last_event_time = datetime.now()
                 
-                # Heartbeat
                 await asyncio.sleep(0)
                 
                 if (datetime.now() - last_event_time).seconds > heartbeat_interval:
                     yield f": heartbeat\n\n"
                     last_event_time = datetime.now()
             
-            # Señal de finalización
             yield f"data: {safe_json_dumps({'type': 'complete'})}\n\n"
             
         except Exception as e:
+            logger.error(f"❌ Error en auto stream: {e}")
             error_event = {
                 "type": "error",
                 "content": str(e),

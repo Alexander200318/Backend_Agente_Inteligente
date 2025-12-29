@@ -8,6 +8,7 @@ from services.escalamiento_service import EscalamientoService
 from models.conversation_mongo import MessageCreate, MessageRole
 import logging
 import json
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,10 @@ async def websocket_chat_endpoint(
             # ============================================
             # TIPO: message (enviar mensaje)
             # ============================================
+
+
+
+
             if message_type == "message":
                 content = message_data.get("content")
                 user_id = message_data.get("user_id")
@@ -87,10 +92,38 @@ async def websocket_chat_endpoint(
                 if not content:
                     continue
                 
+                # 🔥 DEBUG LOG
+                logger.info(f"📨 Mensaje WebSocket recibido:")
+                logger.info(f"   - type: {message_type}")
+                logger.info(f"   - user_id: {user_id}")
+                logger.info(f"   - user_name: '{user_name}'")
+                logger.info(f"   - content: {content[:50]}...")
+                
                 # Determinar rol
                 if user_id:
                     # Es un humano respondiendo
                     role = MessageRole.human_agent
+                    
+                    # 🔥 Si no viene user_name, buscar en la base de datos
+                    if not user_name or user_name == "Usuario":
+                        logger.warning(f"⚠️ user_name vacío o genérico, buscando en BD...")
+                        try:
+                            from models.usuario import Usuario
+                            from models.persona import Persona
+                            
+                            usuario = db.query(Usuario).join(Persona).filter(
+                                Usuario.id_usuario == user_id
+                            ).first()
+                            
+                            if usuario and usuario.persona:
+                                user_name = f"{usuario.persona.nombres} {usuario.persona.primer_apellido}"
+                                logger.info(f"✅ Nombre obtenido de BD: '{user_name}'")
+                            else:
+                                user_name = "Agente Humano"
+                                logger.warning(f"⚠️ Usuario {user_id} no encontrado, usando fallback")
+                        except Exception as e:
+                            logger.error(f"❌ Error obteniendo nombre de usuario: {e}")
+                            user_name = "Agente Humano"
                     
                     # Guardar en MongoDB
                     message = MessageCreate(
@@ -101,39 +134,23 @@ async def websocket_chat_endpoint(
                     )
                     await ConversationService.add_message(session_id, message)
                     
-                    # Broadcast a todos
-                    await manager.broadcast({
+                    # 🔥 Broadcast con el nombre correcto
+                    broadcast_message = {
                         "type": "message",
                         "role": "human_agent",
                         "content": content,
                         "user_id": user_id,
                         "user_name": user_name,
-                        "timestamp": message.timestamp.isoformat() if hasattr(message, 'timestamp') else None
-                    }, session_id)
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
                     
-                    logger.info(f"💬 Mensaje de humano {user_name} en session {session_id}")
-                
-                else:
-                    # Es el usuario final (widget)
-                    role = MessageRole.user
+                    logger.info(f"📡 Broadcasting mensaje: {broadcast_message}")
+                    await manager.broadcast(broadcast_message, session_id)
                     
-                    # Guardar en MongoDB
-                    message = MessageCreate(
-                        role=role,
-                        content=content
-                    )
-                    await ConversationService.add_message(session_id, message)
-                    
-                    # Broadcast a todos
-                    await manager.broadcast({
-                        "type": "message",
-                        "role": "user",
-                        "content": content,
-                        "timestamp": message.timestamp.isoformat() if hasattr(message, 'timestamp') else None
-                    }, session_id)
-                    
-                    logger.info(f"💬 Mensaje de usuario en session {session_id}")
-            
+                    logger.info(f"💬 Mensaje de humano '{user_name}' (ID: {user_id}) en session {session_id}")
+
+
+                        
             # ============================================
             # TIPO: typing (indicador de escritura)
             # ============================================

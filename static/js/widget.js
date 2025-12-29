@@ -952,16 +952,30 @@ async function processStream(response) {
 
 
                         case 'escalamiento':
-                            console.log('🔔 Conversación escaladaa');
-                            console.log('🔍 usuario_nombre recibido:', event.metadata?.usuario_nombre);
                             console.log('🔔 Conversación escalada');
+                            console.log('🔍 session_id original:', SESSION_ID);
+                            console.log('🔍 nuevo_session_id:', event.nuevo_session_id);
+                            
                             addBotMessage(event.content);
                             isEscalated = true;
-                            humanAgentName = event.metadata?.usuario_nombre || "Agente humano";  // ✅ YA ESTÁ
+                            humanAgentName = event.metadata?.usuario_nombre || "Agente humano";
+                            
+                            // 🔥 ACTUALIZAR SESSION_ID al nuevo
+                            if (event.nuevo_session_id) {
+                                SESSION_ID = event.nuevo_session_id;
+                                
+                                try {
+                                    localStorage.setItem(SESSION_STORAGE_KEY, SESSION_ID);
+                                    console.log('✅ SESSION_ID actualizado a:', SESSION_ID);
+                                } catch (e) {
+                                    console.warn('No se pudo guardar nuevo session_id en localStorage');
+                                }
+                            }
+                            
                             connectWebSocket(SESSION_ID);
-                            mostrarIndicadorEscalamiento(humanAgentName);  // ✅ YA USA humanAgentName
+                            mostrarIndicadorEscalamiento(humanAgentName);
                             break;
-                          
+                                                
                             
                         case 'error':
                             console.error('❌', event.content);
@@ -1028,43 +1042,49 @@ function connectWebSocket(sessionId) {
         }));
     };
     
-    websocket.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        console.log('📨 WebSocket mensaje:', data);
+
+
+
+websocket.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    console.log('📨 WebSocket mensaje:', data);
+    
+    switch(data.type) {
+        case 'escalamiento_info':
+            if (data.escalado && data.usuario_nombre) {
+                humanAgentName = data.usuario_nombre;
+                mostrarIndicadorEscalamiento(data.usuario_nombre);
+            }
+            break;
         
-        switch(data.type) {
-            case 'escalamiento_info':
-                if (data.escalado && data.usuario_nombre) {
-                    humanAgentName = data.usuario_nombre;
-                    mostrarIndicadorEscalamiento(data.usuario_nombre);
-                }
-                break;
-            
-            case 'message':
-                if (data.role === 'human_agent') {
-                    // Mensaje del humano
-                    addHumanMessage(data.content, data.user_name);
-                    speakText(data.content);
-                }
-                break;
-            
-            case 'typing':
-                if (data.is_typing) {
-                    mostrarIndicadorEscribiendo(data.user_name);
-                } else {
-                    ocultarIndicadorEscribiendo();
-                }
-                break;
-            
-            case 'user_joined':
-                if (data.role === 'human') {
-                    humanAgentName = data.user_name;
-                    addSystemMessage(`👨‍💼 ${data.user_name} se ha unido a la conversación`);
-                    mostrarIndicadorEscalamiento(data.user_name);
-                }
-                break;
-        }
-    };
+        case 'message':
+            if (data.role === 'human_agent') {
+                // 🔥 Mensaje del humano - siempre mostrar con nombre
+                const nombreAgente = data.user_name || humanAgentName || 'Agente Humano';
+                addHumanMessage(data.content, nombreAgente);
+                speakText(data.content);
+            }
+            break;
+        
+        case 'typing':
+            if (data.is_typing) {
+                mostrarIndicadorEscribiendo(data.user_name || humanAgentName || 'Agente');
+            } else {
+                ocultarIndicadorEscribiendo();
+            }
+            break;
+        
+        case 'user_joined':
+            if (data.role === 'human') {
+                humanAgentName = data.user_name;
+                addSystemMessage(`👨‍💼 ${data.user_name} se ha unido a la conversación`);
+                mostrarIndicadorEscalamiento(data.user_name);
+            }
+            break;
+    }
+};
+
+
     
     websocket.onerror = function(error) {
         console.error('❌ WebSocket error:', error);
@@ -1155,7 +1175,7 @@ function addHumanMessage(text, userName) {
         <div class="message-content">
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
                 <span style="font-size: 18px;">👨‍💼</span>
-                <strong style="color: #667eea;">${userName}</strong>
+                <strong style="color: #667eea;">${userName || humanAgentName || 'Agente Humano'}</strong>
             </div>
             ${formatBotMessage(text)}
             <div class="message-time">${getCurrentTime()}</div>

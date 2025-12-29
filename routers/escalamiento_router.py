@@ -394,26 +394,39 @@ async def responder_conversacion(
 ):
     """
     Humano responde a conversación escalada con WebSocket broadcast
-    
-    Path params:
-    - session_id: ID de la sesión
-    
-    Body:
-    - mensaje: Contenido del mensaje
-    - id_usuario: ID del funcionario
-    - nombre_usuario: Nombre del funcionario
-    
-    Returns:
-        Confirmación con broadcast
     """
     try:
+        # 🔥 LOG COMPLETO
+        logger.info(f"=" * 80)
+        logger.info(f"📝 ENDPOINT /responder llamado")
+        logger.info(f"   - session_id: {session_id}")
+        logger.info(f"   - mensaje: {request.mensaje[:50]}...")
+        logger.info(f"   - id_usuario: {request.id_usuario}")
+        logger.info(f"   - nombre_usuario: '{request.nombre_usuario}'")
+        logger.info(f"=" * 80)
+        
+        # 🔥 Si nombre_usuario está vacío, buscar en BD
+        nombre_final = request.nombre_usuario
+        if not nombre_final or nombre_final.strip() == "":
+            logger.warning(f"⚠️ nombre_usuario vacío, buscando en BD...")
+            usuario = db.query(Usuario).join(Persona).filter(
+                Usuario.id_usuario == request.id_usuario
+            ).first()
+            
+            if usuario and usuario.persona:
+                nombre_final = f"{usuario.persona.nombres} {usuario.persona.primer_apellido}"
+                logger.info(f"✅ Nombre obtenido de BD: '{nombre_final}'")
+            else:
+                nombre_final = "Agente Humano"
+                logger.warning(f"⚠️ Usuario no encontrado, usando fallback")
+        
         escalamiento_service = EscalamientoService(db)
         
         resultado = await escalamiento_service.responder_como_humano(
             session_id=session_id,
             mensaje=request.mensaje,
             id_usuario=request.id_usuario,
-            nombre_usuario=request.nombre_usuario
+            nombre_usuario=nombre_final  # 🔥 Usar nombre final
         )
         
         if resultado["success"]:
@@ -421,25 +434,34 @@ async def responder_conversacion(
             try:
                 from services.websocket_manager import manager
                 
-                await manager.broadcast({
+                broadcast_data = {
                     "type": "message",
                     "role": "human_agent",
                     "content": request.mensaje,
                     "user_id": request.id_usuario,
-                    "user_name": request.nombre_usuario,
+                    "user_name": nombre_final,  # 🔥 Usar nombre final
                     "timestamp": datetime.utcnow().isoformat()
-                }, session_id)
+                }
                 
+                logger.info(f"📡 Broadcasting data: {broadcast_data}")
+                
+                await manager.broadcast(broadcast_data, session_id)
+                
+                logger.info(f"✅ Broadcast exitoso para session {session_id}")
                 broadcast_success = True
+                
             except Exception as ws_error:
-                logger.warning(f"⚠️ Error en WebSocket broadcast: {ws_error}")
+                logger.error(f"❌ Error en WebSocket broadcast: {ws_error}")
+                import traceback
+                logger.error(traceback.format_exc())
                 broadcast_success = False
             
             return {
                 "ok": True,
                 "message": "Respuesta enviada correctamente",
                 "total_mensajes": resultado.get("total_mensajes"),
-                "broadcast": broadcast_success
+                "broadcast": broadcast_success,
+                "nombre_usado": nombre_final  # 🔥 Para debug
             }
         else:
             raise HTTPException(
