@@ -8,6 +8,8 @@ from schemas.departamento_schemas import (
     DepartamentoUpdate,
     DepartamentoResponse
 )
+from auth.dependencies import get_current_user  # 🔥 NUEVO
+from models.usuario import Usuario  # 🔥 NUEVO
 
 router = APIRouter(
     prefix="/departamentos",
@@ -23,7 +25,8 @@ router = APIRouter(
 )
 def crear_departamento(
     departamento: DepartamentoCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Crear un nuevo departamento:
@@ -31,9 +34,14 @@ def crear_departamento(
     - **codigo**: único, sin espacios, se convierte a mayúsculas
     - **email**: formato válido
     - **telefono**: solo números
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
-    return service.crear_departamento(departamento)
+    return service.crear_departamento(
+        departamento, 
+        creado_por_id=current_user.id_usuario  # 🔥 NUEVO
+    )
 
 @router.get(
     "/",
@@ -46,13 +54,16 @@ def listar_departamentos(
     limit: int = Query(100, ge=1, le=500, description="Límite de registros"),
     activo: Optional[bool] = Query(None, description="Filtrar por estado"),
     facultad: Optional[str] = Query(None, description="Filtrar por facultad"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Listar departamentos:
     - Ordenados alfabéticamente por nombre
     - Con paginación
     - Filtros opcionales por estado y facultad
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     return service.listar_departamentos(skip, limit, activo, facultad)
@@ -63,12 +74,17 @@ def listar_departamentos(
     summary="Estadísticas generales",
     description="Obtiene contadores generales de departamentos"
 )
-def obtener_estadisticas_generales(db: Session = Depends(get_db)):
+def obtener_estadisticas_generales(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+):
     """
     Retorna estadísticas:
     - Total de departamentos
     - Departamentos activos
     - Departamentos inactivos
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     return service.obtener_estadisticas_generales()
@@ -81,12 +97,15 @@ def obtener_estadisticas_generales(db: Session = Depends(get_db)):
 )
 def buscar_departamentos(
     q: str = Query(..., min_length=2, description="Término de búsqueda"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Buscar departamentos por:
     - Nombre (parcial, insensible a mayúsculas)
     - Código (parcial, insensible a mayúsculas)
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     return service.buscar_departamentos(q)
@@ -99,10 +118,13 @@ def buscar_departamentos(
 )
 def obtener_por_codigo(
     codigo: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Obtener departamento por código único (ej: TI, ADM, BE)
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     return service.obtener_por_codigo(codigo)
@@ -115,10 +137,13 @@ def obtener_por_codigo(
 )
 def obtener_departamento(
     id_departamento: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Obtener departamento por ID
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     return service.obtener_departamento(id_departamento)
@@ -131,13 +156,16 @@ def obtener_departamento(
 )
 def obtener_estadisticas_departamento(
     id_departamento: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Retorna estadísticas del departamento:
     - Total de personas asociadas
     - Total de agentes virtuales
     - Total de contenidos
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     return service.obtener_estadisticas_departamento(id_departamento)
@@ -151,15 +179,22 @@ def obtener_estadisticas_departamento(
 def actualizar_departamento(
     id_departamento: int,
     departamento: DepartamentoUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Actualizar departamento:
     - Solo enviar los campos a modificar
     - El código se convierte automáticamente a mayúsculas
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
-    return service.actualizar_departamento(id_departamento, departamento)
+    return service.actualizar_departamento(
+        id_departamento, 
+        departamento,
+        actualizado_por_id=current_user.id_usuario  # 🔥 NUEVO
+    )
 
 @router.put(
     "/{id_departamento}/jefe/{id_usuario_jefe}",
@@ -170,14 +205,21 @@ def actualizar_departamento(
 def asignar_jefe_departamento(
     id_departamento: int,
     id_usuario_jefe: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Asignar jefe al departamento:
     - El usuario debe existir y estar activo
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
-    return service.asignar_jefe(id_departamento, id_usuario_jefe)
+    return service.asignar_jefe(
+        id_departamento, 
+        id_usuario_jefe,
+        asignado_por_id=current_user.id_usuario  # 🔥 NUEVO
+    )
 
 @router.delete(
     "/{id_departamento}",
@@ -187,16 +229,21 @@ def asignar_jefe_departamento(
 )
 def eliminar_departamento(
     id_departamento: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Desactivar departamento:
     - No puede tener personas activas asociadas
     - Cambia estado a inactivo (no elimina físicamente)
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
-    return service.eliminar_departamento(id_departamento)
-
+    return service.eliminar_departamento(
+        id_departamento,
+        eliminado_por_id=current_user.id_usuario  # 🔥 NUEVO
+    )
 
 @router.post(
     "/{id_departamento}/ollama/regenerar",
@@ -206,7 +253,8 @@ def eliminar_departamento(
 )
 def regenerar_modelo_ollama(
     id_departamento: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Regenerar modelo de Ollama para el departamento.
@@ -214,10 +262,11 @@ def regenerar_modelo_ollama(
     - Agregar/modificar contenidos
     - Agregar/modificar categorías
     - Cambiar información del departamento
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     return service.regenerar_modelo_ollama(id_departamento)
-
 
 @router.post(
     "/ollama/consultar",
@@ -228,11 +277,14 @@ def regenerar_modelo_ollama(
 def consultar_modelo_departamento(
     codigo_departamento: str = Query(..., description="Código del departamento (ej: TI, ADM)"),
     pregunta: str = Query(..., min_length=5, description="Pregunta para el modelo"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
 ):
     """
     Hacer una consulta al modelo de IA del departamento.
     El modelo responderá basándose en el contenido configurado.
+    
+    🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
     respuesta = service.consultar_modelo_departamento(codigo_departamento, pregunta)
