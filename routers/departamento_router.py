@@ -138,7 +138,7 @@ def obtener_por_codigo(
 def obtener_departamento(
     id_departamento: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    current_user: Usuario = Depends(get_current_user)
 ):
     """
     Obtener departamento por ID
@@ -157,7 +157,7 @@ def obtener_departamento(
 def obtener_estadisticas_departamento(
     id_departamento: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    current_user: Usuario = Depends(get_current_user)
 ):
     """
     Retorna estadísticas del departamento:
@@ -180,7 +180,7 @@ def actualizar_departamento(
     id_departamento: int,
     departamento: DepartamentoUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    current_user: Usuario = Depends(get_current_user)
 ):
     """
     Actualizar departamento:
@@ -193,7 +193,7 @@ def actualizar_departamento(
     return service.actualizar_departamento(
         id_departamento, 
         departamento,
-        actualizado_por_id=current_user.id_usuario  # 🔥 NUEVO
+        actualizado_por_id=current_user.id_usuario
     )
 
 @router.put(
@@ -206,7 +206,7 @@ def asignar_jefe_departamento(
     id_departamento: int,
     id_usuario_jefe: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    current_user: Usuario = Depends(get_current_user)
 ):
     """
     Asignar jefe al departamento:
@@ -218,7 +218,7 @@ def asignar_jefe_departamento(
     return service.asignar_jefe(
         id_departamento, 
         id_usuario_jefe,
-        asignado_por_id=current_user.id_usuario  # 🔥 NUEVO
+        asignado_por_id=current_user.id_usuario
     )
 
 @router.delete(
@@ -230,7 +230,7 @@ def asignar_jefe_departamento(
 def eliminar_departamento(
     id_departamento: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    current_user: Usuario = Depends(get_current_user)
 ):
     """
     Desactivar departamento:
@@ -242,7 +242,7 @@ def eliminar_departamento(
     service = DepartamentoService(db)
     return service.eliminar_departamento(
         id_departamento,
-        eliminado_por_id=current_user.id_usuario  # 🔥 NUEVO
+        eliminado_por_id=current_user.id_usuario
     )
 
 @router.post(
@@ -254,7 +254,7 @@ def eliminar_departamento(
 def regenerar_modelo_ollama(
     id_departamento: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    current_user: Usuario = Depends(get_current_user)
 ):
     """
     Regenerar modelo de Ollama para el departamento.
@@ -278,7 +278,7 @@ def consultar_modelo_departamento(
     codigo_departamento: str = Query(..., description="Código del departamento (ej: TI, ADM)"),
     pregunta: str = Query(..., min_length=5, description="Pregunta para el modelo"),
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    current_user: Usuario = Depends(get_current_user) 
 ):
     """
     Hacer una consulta al modelo de IA del departamento.
@@ -294,3 +294,26 @@ def consultar_modelo_departamento(
         "pregunta": pregunta,
         "respuesta": respuesta
     }
+@router.put(
+    "/{id_departamento}/restaurar",
+    response_model=DepartamentoResponse,
+    summary="Restaurar departamento",
+    description="Reactiva un departamento previamente desactivado"
+)
+def restaurar_departamento(
+    id_departamento: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    Restaurar departamento:
+    - Cambia activo de False a True
+    - Valida que no exista conflicto con otro departamento activo
+    
+    🔒 Requiere autenticación
+    """
+    service = DepartamentoService(db)
+    return service.restaurar_departamento(
+        id_departamento,
+        restaurado_por_id=current_user.id_usuario
+    )

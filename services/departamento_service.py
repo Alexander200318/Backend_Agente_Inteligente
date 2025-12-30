@@ -139,35 +139,9 @@ class DepartamentoService:
         
         return self.repo.search(termino)
     
-    # 🔥 NUEVAS FUNCIONES PARA OLLAMA
-    
-    def regenerar_modelo_ollama(self, id_departamento: int) -> dict:
-        """
-        Regenerar modelo de Ollama para el departamento
-        """
-        # Obtener departamento
-        depto = self.repo.get_by_id(id_departamento)
-        
-        # TODO: Aquí iría la lógica real de Ollama
-        # Por ahora retornamos un mensaje de éxito simulado
-        return {
-            "status": "success",
-            "message": f"Modelo Ollama regenerado para departamento '{depto.nombre}'",
-            "departamento_id": id_departamento,
-            "codigo": depto.codigo
-        }
-    
-    def consultar_modelo_departamento(self, codigo_departamento: str, pregunta: str) -> str:
-        """
-        Consultar al modelo de IA del departamento
-        """
-        # Obtener departamento por código
-        depto = self.obtener_por_codigo(codigo_departamento)
-        
-        # TODO: Aquí iría la lógica real de consulta a Ollama
-        # Por ahora retornamos una respuesta simulada
-        return (
-            f"Esta es una respuesta simulada del modelo de '{depto.nombre}' "
-            f"para la pregunta: '{pregunta}'. "
-            "Integración real con Ollama pendiente."
-        )
+    def restaurar_departamento(
+    self,
+    id_departamento: int,
+    restaurado_por_id: Optional[int] = None
+    ) -> Departamento:
+        return self.repo.restore(id_departamento, restaurado_por_id)
