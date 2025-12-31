@@ -138,3 +138,10 @@ class DepartamentoService:
             raise ValidationException("El término de búsqueda debe tener al menos 2 caracteres")
         
         return self.repo.search(termino)
+    
+    def restaurar_departamento(
+    self,
+    id_departamento: int,
+    restaurado_por_id: Optional[int] = None
+    ) -> Departamento:
+        return self.repo.restore(id_departamento, restaurado_por_id)
