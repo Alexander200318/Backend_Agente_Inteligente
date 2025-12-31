@@ -12,6 +12,41 @@ settings = OllamaSettings()
 class OllamaClient:
     def __init__(self, base_url: str = None):
         self.base = (base_url or settings.OLLAMA_HOST).rstrip("/")
+        self.api_version = None  # 🔥 Detectar versión automáticamente
+
+    def _detect_api_version(self):
+        """
+        Detecta qué versión de la API usar
+        - Versiones viejas: /api/generate
+        - Versiones nuevas (0.5.0+): /api/chat
+        """
+        if self.api_version is not None:
+            return self.api_version
+        
+        # Probar /api/chat primero (versión nueva)
+        try:
+            test_url = f"{self.base}/api/chat"
+            response = requests.post(
+                test_url,
+                json={
+                    "model": "llama3",
+                    "messages": [{"role": "user", "content": "test"}],
+                    "stream": False
+                },
+                timeout=5
+            )
+            
+            if response.status_code != 404:
+                self.api_version = "chat"
+                print("✅ Ollama API: Usando /api/chat (versión nueva)")
+                return "chat"
+        except:
+            pass
+        
+        # Fallback a /api/generate (versión vieja)
+        self.api_version = "generate"
+        print("✅ Ollama API: Usando /api/generate (versión vieja)")
+        return "generate"
 
     def generate(
         self, 
@@ -20,17 +55,14 @@ class OllamaClient:
         stream: bool = False, 
         temperature: float = 0.7,
         max_tokens: int = 2000,
-        options: Optional[Dict] = None  # 🔥 NUEVO: acepta options personalizadas
+        options: Optional[Dict] = None
     ) -> Dict[str, Any]:
         """
-        Genera respuesta con Ollama
-        
-        Returns:
-            Dict con 'response' y metadata
+        Genera respuesta con Ollama (compatible con ambas versiones)
         """
-        url = f"{self.base}/api/generate"
+        api_version = self._detect_api_version()
         
-        # 🔥 Merge de options por defecto + personalizadas
+        # Opciones por defecto
         default_options = {
             "num_predict": max_tokens,
             "temperature": temperature,
@@ -41,28 +73,61 @@ class OllamaClient:
         if options:
             default_options.update(options)
         
-        payload = {
-            "model": model_name,
-            "prompt": prompt,
-            "stream": stream,
-            "options": default_options
-        }
-        
         try:
-            r = requests.post(url, json=payload, timeout=120)
-            r.raise_for_status()
+            if api_version == "chat":
+                # 🔥 API nueva: /api/chat
+                url = f"{self.base}/api/chat"
+                payload = {
+                    "model": model_name,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "stream": stream,
+                    "options": default_options
+                }
+                
+                r = requests.post(url, json=payload, timeout=120)
+                r.raise_for_status()
+                
+                if stream:
+                    return {"response": "Streaming no implementado"}
+                
+                data = r.json()
+                
+                # Extraer contenido de la respuesta
+                message_content = ""
+                if "message" in data:
+                    message_content = data["message"].get("content", "")
+                
+                return {
+                    "response": message_content,
+                    "model": data.get("model", model_name),
+                    "done": data.get("done", False)
+                }
             
-            if stream:
-                # Manejar streaming (para futuro)
-                return {"response": "Streaming no implementado aún"}
-            
-            data = r.json()
-            return {
-                "response": data.get("response", ""),
-                "model": data.get("model", model_name),
-                "done": data.get("done", False),
-                "context": data.get("context", [])
-            }
+            else:
+                # 🔥 API vieja: /api/generate
+                url = f"{self.base}/api/generate"
+                payload = {
+                    "model": model_name,
+                    "prompt": prompt,
+                    "stream": stream,
+                    "options": default_options
+                }
+                
+                r = requests.post(url, json=payload, timeout=120)
+                r.raise_for_status()
+                
+                if stream:
+                    return {"response": "Streaming no implementado"}
+                
+                data = r.json()
+                return {
+                    "response": data.get("response", ""),
+                    "model": data.get("model", model_name),
+                    "done": data.get("done", False),
+                    "context": data.get("context", [])
+                }
             
         except requests.exceptions.ConnectionError:
             raise Exception(
@@ -74,7 +139,6 @@ class OllamaClient:
         except Exception as e:
             raise Exception(f"Error en Ollama: {str(e)}")
 
-    # 🔥 NUEVO: Método con streaming
     def generate_stream(
         self,
         model_name: str,
@@ -85,24 +149,11 @@ class OllamaClient:
     ) -> Generator[str, None, None]:
         """
         Genera respuesta con streaming (palabra por palabra)
-        
-        Args:
-            model_name: Nombre del modelo (ej: "llama3")
-            prompt: Prompt completo
-            temperature: Temperatura (0.0-1.0)
-            max_tokens: Máximo de tokens a generar
-            options: Opciones adicionales (ej: {"keep_alive": "15m"})
-        
-        Yields:
-            str: Fragmentos de texto a medida que se generan
-            
-        Example:
-            >>> for chunk in client.generate_stream("llama3", "Hola"):
-            ...     print(chunk, end='', flush=True)
+        Compatible con ambas versiones de la API
         """
-        url = f"{self.base}/api/generate"
+        api_version = self._detect_api_version()
         
-        # Merge de options
+        # Opciones
         default_options = {
             "num_predict": max_tokens,
             "temperature": temperature,
@@ -113,35 +164,67 @@ class OllamaClient:
         if options:
             default_options.update(options)
         
-        payload = {
-            "model": model_name,
-            "prompt": prompt,
-            "stream": True,  # ← Activar streaming
-            "options": default_options
-        }
-        
         try:
-            with requests.post(url, json=payload, stream=True, timeout=120) as response:
-                response.raise_for_status()
+            if api_version == "chat":
+                # 🔥 API nueva: /api/chat
+                url = f"{self.base}/api/chat"
+                payload = {
+                    "model": model_name,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "stream": True,
+                    "options": default_options
+                }
                 
-                for line in response.iter_lines():
-                    if line:
-                        try:
-                            chunk_data = json.loads(line)
-                            
-                            # Ollama envía el texto en el campo "response"
-                            if "response" in chunk_data:
-                                text_chunk = chunk_data["response"]
-                                if text_chunk:  # Solo yield si hay contenido
-                                    yield text_chunk
-                            
-                            # Verificar si terminó
-                            if chunk_data.get("done", False):
-                                break
+                with requests.post(url, json=payload, stream=True, timeout=120) as response:
+                    response.raise_for_status()
+                    
+                    for line in response.iter_lines():
+                        if line:
+                            try:
+                                chunk_data = json.loads(line)
                                 
-                        except json.JSONDecodeError as e:
-                            print(f"⚠️ Error decodificando JSON: {e}")
-                            continue
+                                # En /api/chat, el texto está en message.content
+                                if "message" in chunk_data:
+                                    text_chunk = chunk_data["message"].get("content", "")
+                                    if text_chunk:
+                                        yield text_chunk
+                                
+                                if chunk_data.get("done", False):
+                                    break
+                                    
+                            except json.JSONDecodeError:
+                                continue
+            
+            else:
+                # 🔥 API vieja: /api/generate
+                url = f"{self.base}/api/generate"
+                payload = {
+                    "model": model_name,
+                    "prompt": prompt,
+                    "stream": True,
+                    "options": default_options
+                }
+                
+                with requests.post(url, json=payload, stream=True, timeout=120) as response:
+                    response.raise_for_status()
+                    
+                    for line in response.iter_lines():
+                        if line:
+                            try:
+                                chunk_data = json.loads(line)
+                                
+                                if "response" in chunk_data:
+                                    text_chunk = chunk_data["response"]
+                                    if text_chunk:
+                                        yield text_chunk
+                                
+                                if chunk_data.get("done", False):
+                                    break
+                                    
+                            except json.JSONDecodeError:
+                                continue
                             
         except requests.exceptions.ConnectionError:
             raise Exception(

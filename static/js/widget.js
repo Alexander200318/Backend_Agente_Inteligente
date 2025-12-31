@@ -10,6 +10,7 @@ let humanAgentName = null;
     
     // Bloquear errores de extensiones
     const originalError = console.error;
+    
 
     console.error = function(...args) {
         const msg = args.join(' ');
@@ -82,6 +83,66 @@ function initVoices() {
     availableVoices = speechSynthesis.getVoices();
     console.log('Voces disponibles:', availableVoices.length);
 }
+
+
+
+// ==================== DETECCIÓN DE INFORMACIÓN DEL CLIENTE ====================
+function getClientInfo() {
+    const ua = navigator.userAgent;
+    
+    // Detectar tipo de dispositivo
+    let deviceType = 'desktop';
+    if (/tablet|ipad|playbook|silk/i.test(ua)) {
+        deviceType = 'tablet';
+    } else if (/mobile|iphone|ipod|android|blackberry|opera mini|windows phone/i.test(ua)) {
+        deviceType = 'mobile';
+    }
+    
+    // Detectar navegador
+    let browser = 'Unknown';
+    if (ua.indexOf('Firefox') > -1) {
+        browser = 'Firefox';
+    } else if (ua.indexOf('Opera') > -1 || ua.indexOf('OPR') > -1) {
+        browser = 'Opera';
+    } else if (ua.indexOf('Trident') > -1) {
+        browser = 'Internet Explorer';
+    } else if (ua.indexOf('Edge') > -1) {
+        browser = 'Edge';
+    } else if (ua.indexOf('Chrome') > -1) {
+        browser = 'Chrome';
+    } else if (ua.indexOf('Safari') > -1) {
+        browser = 'Safari';
+    }
+    
+    // Detectar sistema operativo
+    let os = 'Unknown';
+    if (ua.indexOf('Windows NT 10.0') > -1) os = 'Windows 10';
+    else if (ua.indexOf('Windows NT 6.3') > -1) os = 'Windows 8.1';
+    else if (ua.indexOf('Windows NT 6.2') > -1) os = 'Windows 8';
+    else if (ua.indexOf('Windows NT 6.1') > -1) os = 'Windows 7';
+    else if (ua.indexOf('Mac OS X') > -1) os = 'Mac OS X';
+    else if (ua.indexOf('Android') > -1) os = 'Android';
+    else if (ua.indexOf('iOS') > -1 || ua.indexOf('iPhone') > -1 || ua.indexOf('iPad') > -1) os = 'iOS';
+    else if (ua.indexOf('Linux') > -1) os = 'Linux';
+    
+    return {
+        user_agent: ua,
+        dispositivo: deviceType,
+        navegador: browser,
+        sistema_operativo: os,
+        pantalla: {
+            width: window.screen.width,
+            height: window.screen.height
+        },
+        idioma: navigator.language || navigator.userLanguage
+    };
+}
+
+// Obtener info al cargar
+const CLIENT_INFO = getClientInfo();
+console.log('📱 Información del cliente:', CLIENT_INFO);
+
+
 
 speechSynthesis.onvoiceschanged = initVoices;
 initVoices();
@@ -689,20 +750,15 @@ async function inicializarChat() {
 
 // ==================== ENVIAR MENSAJE CON TIMEOUT Y RETRY ====================
 async function sendMessage() {
-    console.log("📩 CLICK ENVIAR detectado", { 
-    sendButtonExists: !!sendButton,
-    chatInputExists: !!chatInput,
-    value: chatInput?.value
-  });
+    console.log("📩 CLICK ENVIAR detectado");
 
     const mensaje = chatInput.value.trim();
     if (!mensaje) return;
 
-    // 🔥 AGREGAR ESTA VERIFICACIÓN:
+    // WebSocket check...
     if (isEscalated && websocket && websocket.readyState === WebSocket.OPEN) {
-        // Enviar por WebSocket
-        addUserMessage(mensaje);  // ← AGREGAR ESTA LÍNEA
-        chatInput.value = '';     // ← AGREGAR ESTA LÍNEA
+        addUserMessage(mensaje);
+        chatInput.value = '';
         sendMessageViaWebSocket(mensaje);
         return;
     }
@@ -715,10 +771,6 @@ async function sendMessage() {
 
     addUserMessage(mensaje);
     chatInput.value = '';
-
-
-
-
     sendButton.disabled = true;
     typingIndicator.classList.add('active');
 
@@ -740,25 +792,30 @@ async function sendMessage() {
 
             let endpoint, body;
 
+            // 🔥 CONSTRUIR BODY CON INFORMACIÓN DEL CLIENTE
+            const baseBody = {
+                message: mensaje,
+                session_id: SESSION_ID,
+                origin: "widget",
+                // 🔥 AGREGAR INFORMACIÓN DEL CLIENTE
+                client_info: CLIENT_INFO
+            };
+
             if (selectedAgentId) {
                 endpoint = `${API_BASE_URL}/chat/agent/stream`;
                 body = { 
-                    message: mensaje, 
-                    agent_id: Number(selectedAgentId),
-                    session_id: SESSION_ID,
-                    origin: "widget"  // ← AGREGAR
+                    ...baseBody,
+                    agent_id: Number(selectedAgentId)
                 };
             } else {
                 endpoint = `${API_BASE_URL}/chat/auto/stream`;
                 body = { 
-                    message: mensaje, 
-                    departamento_codigo: "",
-                    session_id: SESSION_ID,
-                    origin: "widget"  // ← AGREGAR
-                    
+                    ...baseBody,
+                    departamento_codigo: ""
                 };
             }
 
+            console.log('📤 Enviando request con client_info:', body.client_info);
 
             currentStreamController = new AbortController();
             const timeoutId = setTimeout(() => {
@@ -905,6 +962,24 @@ async function processStream(response) {
                                 console.log('📌 Modo stateless: agente temporal para esta pregunta');
                             }
                             break;
+
+
+
+                        case 'confirmacion_escalamiento':
+                            console.log('🔔 Solicitud de confirmación de escalamiento');
+                            
+                            // Ocultar typing indicator
+                            typingIndicator.classList.remove('active');
+                            
+                            // Mostrar mensaje de confirmación
+                            addBotMessage(event.content);
+                            
+                            // Hacer scroll
+                            scrollToBottom();
+                            break;
+
+
+
                             
                         case 'token':
                             if (!currentBotMessageDiv) {
@@ -1101,6 +1176,10 @@ function sendMessageViaWebSocket(content) {
         console.error('❌ WebSocket no conectado');
         return;
     }
+        // 🔥 AGREGAR LOG
+    console.log('📤 Enviando mensaje via WebSocket:');
+    console.log('   - SESSION_ID actual:', SESSION_ID);
+    console.log('   - content:', content);
     
     websocket.send(JSON.stringify({
         type: 'message',

@@ -1,25 +1,19 @@
 # services/escalamiento_service.py
 """
 Servicio para escalar conversaciones a atención humana
-
-Este servicio maneja:
-1. Detección de intención de escalamiento
-2. Actualización de estados en MySQL y MongoDB
-3. Asignación de usuarios humanos
-4. Notificaciones
+Sistema SIMPLE con palabras clave y confirmación
 """
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import logging
-import re
 import uuid
 import random
 
 from models.agente_virtual import AgenteVirtual
 from models.notificacion_usuario import NotificacionUsuario, TipoNotificacionEnum
-from models.usuario import Usuario, EstadoUsuarioEnum
-from models.persona import Persona, EstadoPersonaEnum
+from models.usuario import Usuario
+from models.persona import Persona
 from models.usuario_rol import UsuarioRol
 from models.rol import Rol
 from models.conversacion_sync import ConversacionSync, EstadoConversacionEnum
@@ -36,58 +30,132 @@ from services.conversation_service import ConversationService
 
 logger = logging.getLogger(__name__)
 
+_confirmaciones_pendientes_global = {}
 
 class EscalamientoService:
     """Servicio para gestionar escalamiento de conversaciones a humanos"""
     
-    # Palabras clave que indican intención de hablar con humano
+    # Palabras clave para detectar escalamiento
     KEYWORDS_ESCALAMIENTO = [
         'humano', 'persona', 'operador', 'agente',
         'hablar con alguien', 'contacto', 'ayuda real',
-        'representante', 'asesor', 'atención al cliente',
-        'no entiendo', 'necesito ayuda', 'comunicarme con',
-        'quiero hablar', 'puedo hablar', 'dame un'
+        'representante', 'asesor', 'atención al cliente'
+    ]
+    
+    # Palabras para confirmar
+    KEYWORDS_CONFIRMACION = [
+        'si', 'sí', 'yes', 'ok', 'okay', 'vale', 'claro',
+        'adelante', 'dale', 'confirmo', 'acepto', 'quiero'
+    ]
+    
+    # Palabras para rechazar
+    KEYWORDS_RECHAZO = [
+        'no', 'nop', 'cancela', 'mejor no', 'no gracias',
+        'olvida', 'dejalo', 'espera', 'ahora no'
     ]
     
     def __init__(self, db: Session):
         self.db = db
+        # Cache en memoria para pendientes de confirmación
+        self._confirmaciones_pendientes = _confirmaciones_pendientes_global
     
     def detectar_intencion_escalamiento(self, mensaje: str) -> bool:
         """
         Detecta si el usuario quiere hablar con un humano
-        
-        Args:
-            mensaje: Texto del mensaje del usuario
-            
-        Returns:
-            True si detecta intención de escalamiento
+        SIMPLE: solo busca palabras clave
         """
         mensaje_lower = mensaje.lower()
         
-        # Buscar palabras clave
         for keyword in self.KEYWORDS_ESCALAMIENTO:
             if keyword in mensaje_lower:
                 logger.info(f"🔔 Keyword de escalamiento detectado: '{keyword}'")
                 return True
         
-        # Patrones regex más específicos
-        patrones = [
-            r'hablar\s+con\s+(un|una|el|la)?\s*(humano|persona|operador|agente)',
-            r'necesito\s+(hablar|contactar|comunicarme)\s+con',
-            r'quiero\s+(hablar|contactar|comunicarme)\s+con',
-            r'puedo\s+hablar\s+con',
-            r'dame\s+(un|una)\s*(operador|agente|persona)'
-        ]
-        
-        for patron in patrones:
-            if re.search(patron, mensaje_lower):
-                logger.info(f"🔔 Patrón de escalamiento detectado: '{patron}'")
-                return True
-        
         return False
     
+    def detectar_confirmacion(self, mensaje: str) -> str:
+        """
+        Detecta si el usuario confirma o rechaza
+        
+        Returns:
+            'confirmar' | 'rechazar' | 'indefinido'
+        """
+        mensaje_lower = mensaje.lower().strip()
+        
+        # Primero buscar rechazo
+        for keyword in self.KEYWORDS_RECHAZO:
+            if keyword in mensaje_lower:
+                logger.info(f"❌ Keyword de rechazo detectado: '{keyword}'")
+                return 'rechazar'
+        
+        # Luego buscar confirmación
+        for keyword in self.KEYWORDS_CONFIRMACION:
+            if keyword in mensaje_lower:
+                logger.info(f"✅ Keyword de confirmación detectado: '{keyword}'")
+                return 'confirmar'
+        
+        logger.warning(f"⚠️ Respuesta indefinida: '{mensaje_lower}'")
+        return 'indefinido'
+    
+    def marcar_confirmacion_pendiente(self, session_id: str):
+        """Marca que una sesión tiene confirmación pendiente"""
+        self._confirmaciones_pendientes[session_id] = datetime.utcnow()
+        logger.info(f"⏳ Confirmación pendiente para session: {session_id}")
+    
+    def tiene_confirmacion_pendiente(self, session_id: str) -> bool:
+        """Verifica si hay confirmación pendiente (válida por 5 minutos)"""
+        if session_id not in self._confirmaciones_pendientes:
+            return False
+        
+        timestamp = self._confirmaciones_pendientes[session_id]
+        tiempo_transcurrido = (datetime.utcnow() - timestamp).total_seconds()
+        
+        # Expirar después de 5 minutos
+        if tiempo_transcurrido > 300:
+            del self._confirmaciones_pendientes[session_id]
+            logger.info(f"⏰ Confirmación expirada para session: {session_id}")
+            return False
+        
+        return True
+    
+    def limpiar_confirmacion_pendiente(self, session_id: str):
+        """Limpia la confirmación pendiente"""
+        if session_id in self._confirmaciones_pendientes:
+            del self._confirmaciones_pendientes[session_id]
+            logger.info(f"🗑️ Confirmación limpiada para session: {session_id}")
+    
+    def obtener_mensaje_confirmacion(self, agente_nombre: str) -> str:
+        """Mensaje de solicitud de confirmación"""
+        return f"""🤝 **¿Deseas hablar con un agente humano?**
 
+Te conectaré con una persona real del equipo de {agente_nombre}.
 
+⚠️ **Ten en cuenta:**
+• Esta conversación será registrada
+• Tus datos serán almacenados de forma segura
+• Un agente te atenderá en breve
+
+**¿Confirmas que deseas continuar?**
+
+Responde:
+✅ **"Sí"** para conectar
+❌ **"No"** para continuar aquí"""
+    
+    def obtener_mensaje_confirmado(self) -> str:
+        """Mensaje cuando el usuario confirma"""
+        return """✅ **Perfecto, conectando...**
+
+Un momento mientras encuentro a un agente disponible.
+
+⏳ Espera por favor..."""
+    
+    def obtener_mensaje_cancelado(self) -> str:
+        """Mensaje cuando el usuario cancela"""
+        return """❌ **Entendido**
+
+No hay problema. Sigo aquí para ayudarte.
+
+¿En qué más puedo asistirte? 😊"""
 
     async def escalar_conversacion(
         self,
@@ -95,19 +163,9 @@ class EscalamientoService:
         id_agente: int,
         motivo: str = "Solicitado por usuario"
     ) -> Dict[str, Any]:
-        """
-        Escala conversación a humano
-        
-        🔥 COMPORTAMIENTO:
-        - Actualiza la conversación existente a estado escalada_humano
-        - NO crea nueva conversación
-        - Usa el mismo session_id
-        """
-        
+        """Escala conversación a humano"""
         try:
-            # ============================================
-            # PASO 1: 🔥 ACTUALIZAR CONVERSACIÓN A ESCALADA
-            # ============================================
+            # Actualizar conversación a escalada
             update_escalado = ConversationUpdate(
                 estado=ConversationStatus.escalada_humano,
                 requirio_atencion_humana=True
@@ -117,7 +175,6 @@ class EscalamientoService:
                 update_escalado
             )
             
-            # Agregar mensaje de sistema indicando escalamiento
             mensaje_escalamiento = MessageCreate(
                 role=MessageRole.system,
                 content=f"🔔 Conversación escalada a atención humana. Motivo: {motivo}"
@@ -126,14 +183,11 @@ class EscalamientoService:
             
             logger.info(f"✅ Conversación escalada en MongoDB: {session_id}")
             
-            # ============================================
-            # PASO 2: 🔥 ASIGNAR FUNCIONARIO Y NOTIFICAR
-            # ============================================
+            # Asignar funcionario
             funcionario_asignado = None
             usuarios_notificados = 0
             
             try:
-                # Obtener departamento del agente
                 agente = self.db.query(AgenteVirtual).filter(
                     AgenteVirtual.id_agente == id_agente
                 ).first()
@@ -143,91 +197,60 @@ class EscalamientoService:
                 
                 id_departamento = agente.id_departamento
                 
-                if not id_departamento:
-                    logger.warning(f"⚠️ Agente {id_agente} no tiene departamento asignado")
-                else:
-                    # Obtener funcionarios disponibles del departamento
+                if id_departamento:
                     funcionarios = self._obtener_usuarios_departamento(id_departamento)
                     
                     if funcionarios:
                         funcionario_asignado = funcionarios[0]
                         
-                        # Obtener nombre completo
                         nombre_completo = (
                             f"{funcionario_asignado.persona.nombre} "
                             f"{funcionario_asignado.persona.apellido}"
                         )
-                        logger.info(f"🔍 Nombre: '{funcionario_asignado.persona.nombre}'")
-                        logger.info(f"🔍 Apellido: '{funcionario_asignado.persona.apellido}'")
-                        logger.info(f"🔍 Nombre completo: '{nombre_completo}'")
                         
-                        # 🔥 ACTUALIZAR EN MONGODB con el funcionario asignado
                         update_asignacion = ConversationUpdate(
                             escalado_a_usuario_id=funcionario_asignado.id_usuario,
                             escalado_a_usuario_nombre=nombre_completo
                         )
                         await ConversationService.update_conversation(
-                            session_id,  # ✅ CAMBIO: usar session_id en lugar de nuevo_session_id
+                            session_id,
                             update_asignacion
                         )
                         
-                        logger.info(
-                            f"✅ Conversación asignada a: {nombre_completo} "
-                            f"(ID: {funcionario_asignado.id_usuario})"
-                        )
+                        logger.info(f"✅ Conversación asignada a: {nombre_completo}")
                         
-                        # Agregar mensaje de sistema en MongoDB
                         mensaje_asignacion = MessageCreate(
                             role=MessageRole.system,
                             content=f"📌 Conversación asignada a {nombre_completo}"
                         )
-                        await ConversationService.add_message(session_id, mensaje_asignacion)  # ✅ CAMBIO
+                        await ConversationService.add_message(session_id, mensaje_asignacion)
                         
-                        # Crear notificación para el funcionario
                         usuarios_notificados = await self._crear_notificacion_escalamiento(
                             funcionario=funcionario_asignado,
-                            session_id=session_id,  # ✅ CAMBIO
+                            session_id=session_id,
                             id_agente=id_agente,
                             agente_nombre=agente.nombre_agente,
                             motivo=motivo
                         )
                         
-                    else:
-                        logger.warning(f"⚠️ No hay funcionarios disponibles en departamento {id_departamento}")
-                        
-                        # Agregar mensaje de advertencia
-                        mensaje_sin_funcionario = MessageCreate(
-                            role=MessageRole.system,
-                            content="⚠️ No hay funcionarios disponibles en este momento. La conversación quedará en espera."
-                        )
-                        await ConversationService.add_message(session_id, mensaje_sin_funcionario)  # ✅ CAMBIO
-                        
             except Exception as e:
                 logger.error(f"❌ Error en asignación de funcionario: {e}")
-                import traceback
-                traceback.print_exc()
             
-            # ============================================
-            # PASO 3: CREAR/ACTUALIZAR REGISTRO EN MYSQL (ConversacionSync)
-            # ============================================
+            # Crear/actualizar registro en MySQL
             try:
-                # Buscar si ya existe registro en MySQL
                 conversacion_sync = self.db.query(ConversacionSync).filter(
-                    ConversacionSync.mongodb_conversation_id == session_id  # ✅ CAMBIO
+                    ConversacionSync.mongodb_conversation_id == session_id
                 ).first()
                 
                 if conversacion_sync:
-                    # Actualizar existente
                     conversacion_sync.estado = EstadoConversacionEnum.escalada_humano
                     conversacion_sync.requirio_atencion_humana = True
                     conversacion_sync.ultima_sincronizacion = datetime.utcnow()
-                    logger.info(f"✅ ConversacionSync actualizada en MySQL: {conversacion_sync.id_conversacion_sync}")
                 else:
-                    # Crear nuevo registro si no existe
                     visitante = await self._obtener_o_crear_visitante(session_id)
                     
                     conversacion_sync = ConversacionSync(
-                        mongodb_conversation_id=session_id,  # ✅ CAMBIO
+                        mongodb_conversation_id=session_id,
                         id_visitante=visitante.id_visitante,
                         id_agente_inicial=id_agente,
                         id_agente_actual=id_agente,
@@ -238,7 +261,6 @@ class EscalamientoService:
                     )
                     
                     self.db.add(conversacion_sync)
-                    logger.info(f"✅ ConversacionSync creada en MySQL")
                 
                 self.db.commit()
                 
@@ -246,12 +268,9 @@ class EscalamientoService:
                 logger.error(f"❌ Error en ConversacionSync MySQL: {e}")
                 self.db.rollback()
             
-            # ============================================
-            # PASO 4: RETORNAR RESULTADO
-            # ============================================
             return {
                 "ok": True,
-                "session_id": session_id,  # ✅ CAMBIO: un solo session_id
+                "session_id": session_id,
                 "conversacion_id": str(conversacion_actualizada.id),
                 "funcionario_asignado": {
                     "id": funcionario_asignado.id_usuario if funcionario_asignado else None,
@@ -261,16 +280,13 @@ class EscalamientoService:
                     ) if funcionario_asignado else None
                 },
                 "usuarios_notificados": usuarios_notificados,
-                "mensaje": "Conversación escalada y asignada correctamente." if funcionario_asignado else "Conversación escalada sin asignación (no hay funcionarios disponibles)."
+                "mensaje": "Conversación escalada correctamente." if funcionario_asignado else "Conversación escalada sin asignación."
             }
             
         except Exception as e:
             logger.error(f"❌ Error escalando conversación: {e}")
             self.db.rollback()
             raise
-
-
-
 
     async def _crear_notificacion_escalamiento(
         self,
@@ -280,26 +296,10 @@ class EscalamientoService:
         agente_nombre: str,
         motivo: str
     ) -> int:
-        """
-        Crea notificación para el funcionario asignado
-        
-        Args:
-            funcionario: Usuario funcionario
-            session_id: ID de la sesión
-            id_agente: ID del agente
-            agente_nombre: Nombre del agente
-            motivo: Motivo del escalamiento
-            
-        Returns:
-            1 si se creó la notificación, 0 si hubo error
-        """
+        """Crea notificación para el funcionario asignado"""
         try:
-            from models.notificacion_usuario import NotificacionUsuario, TipoNotificacionEnum
-            
-            # Obtener nombre del funcionario
             nombre_funcionario = f"{funcionario.persona.nombre} {funcionario.persona.apellido}"
     
-            # Crear notificación
             notificacion = NotificacionUsuario(
                 id_usuario=funcionario.id_usuario,
                 id_agente=id_agente,
@@ -316,13 +316,7 @@ class EscalamientoService:
             self.db.add(notificacion)
             self.db.commit()
             
-            logger.info(f"✅ Notificación creada para {nombre_funcionario} (ID: {funcionario.id_usuario})")
-            
-            # TODO: Aquí podrías agregar:
-            # - Enviar email
-            # - Enviar notificación push
-            # - WebSocket broadcast al funcionario
-            
+            logger.info(f"✅ Notificación creada para {nombre_funcionario}")
             return 1
             
         except Exception as e:
@@ -330,59 +324,14 @@ class EscalamientoService:
             self.db.rollback()
             return 0
 
-
-
-
-
-
-
-
-    
-    async def _notificar_escalamiento(
-        self,
-        session_id: str,
-        id_agente: int,
-        motivo: str
-    ) -> int:
-        """
-        Notifica a usuarios humanos sobre el escalamiento
-        
-        Returns:
-            Número de usuarios notificados
-        """
-        try:
-            logger.info(f"📢 Notificación de escalamiento: session={session_id}, agente={id_agente}")
-            
-            # TODO: Implementar sistema de notificaciones real
-            # - Enviar email
-            # - Enviar notificación push
-            # - Enviar mensaje a Slack/Teams
-            # - Crear tarea en sistema de tickets
-            
-            return 1  # Simulamos 1 usuario notificado
-            
-        except Exception as e:
-            logger.error(f"❌ Error notificando escalamiento: {e}")
-            return 0
-    
     async def _obtener_o_crear_visitante(self, session_id: str) -> VisitanteAnonimo:
-        """
-        Obtiene o crea un visitante anónimo basado en el session_id
-        
-        Args:
-            session_id: ID de sesión
-            
-        Returns:
-            Instancia de VisitanteAnonimo
-        """
+        """Obtiene o crea un visitante anónimo"""
         try:
-            # Buscar visitante existente
             visitante = self.db.query(VisitanteAnonimo).filter(
                 VisitanteAnonimo.identificador_sesion == session_id
             ).first()
             
             if not visitante:
-                # Crear nuevo visitante
                 visitante = VisitanteAnonimo(
                     identificador_sesion=session_id,
                     ip_origen="unknown",
@@ -395,7 +344,6 @@ class EscalamientoService:
                 
                 logger.info(f"✅ Nuevo visitante creado: {visitante.id_visitante}")
             else:
-                # Actualizar última visita si ya existe
                 visitante.ultima_visita = datetime.utcnow()
                 self.db.commit()
                 
@@ -406,28 +354,14 @@ class EscalamientoService:
             self.db.rollback()
             raise
     
-    # ============================================
-    # 🔥 AUTO-FINALIZAR CONVERSACIONES INACTIVAS
-    # ============================================
     async def finalizar_conversaciones_inactivas(
         self,
-        timeout_minutos: int = 30
+        timeout_minutos: int = 1
     ) -> Dict[str, Any]:
-        """
-        Finaliza conversaciones inactivas después de X minutos
-        
-        Args:
-            timeout_minutos: Minutos de inactividad para finalizar
-            
-        Returns:
-            Diccionario con estadísticas
-        """
-        
+        """Finaliza conversaciones inactivas"""
         try:
-            # Calcular timestamp límite
             tiempo_limite = datetime.utcnow() - timedelta(minutes=timeout_minutos)
             
-            # Buscar conversaciones activas o escaladas sin actividad
             conversaciones = await ConversationService.get_inactive_conversations(
                 tiempo_limite=tiempo_limite,
                 estados=[ConversationStatus.activa, ConversationStatus.escalada_humano]
@@ -438,28 +372,21 @@ class EscalamientoService:
             
             for conv in conversaciones:
                 try:
-                    # 🔥 conv es un Dict, no un objeto Pydantic
                     session_id = conv['session_id']
-                    conv_id = conv['_id']
                     
-                    # Finalizar en MongoDB
                     update_data = ConversationUpdate(
                         estado=ConversationStatus.finalizada
                     )
                     await ConversationService.update_conversation(session_id, update_data)
                     
-                    # Agregar mensaje de cierre
                     cierre_message = MessageCreate(
                         role=MessageRole.system,
-                        content=f"Conversación finalizada automáticamente por inactividad ({timeout_minutos} minutos)"
+                        content=f"Conversación finalizada por inactividad ({timeout_minutos} minutos)"
                     )
                     await ConversationService.add_message(session_id, cierre_message)
                     
                     finalizadas_mongo += 1
-                    logger.info(f"✅ Conversación MongoDB finalizada: {session_id}")
                     
-                    # 🔥 Finalizar en MySQL (ConversacionSync)
-                    # Buscar por session_id ya que ahora pueden ser más largos
                     conversacion_sync = self.db.query(ConversacionSync).filter(
                         ConversacionSync.mongodb_conversation_id == session_id
                     ).first()
@@ -471,10 +398,8 @@ class EscalamientoService:
                         finalizadas_mysql += 1
                     
                 except Exception as e:
-                    session_id_safe = conv.get('session_id', 'unknown')
-                    logger.error(f"❌ Error finalizando conversación {session_id_safe}: {e}")
+                    logger.error(f"❌ Error finalizando conversación: {e}")
             
-            # Commit de cambios en MySQL
             if finalizadas_mysql > 0:
                 self.db.commit()
             
@@ -491,17 +416,9 @@ class EscalamientoService:
             self.db.rollback()
             raise
     
-    # ============================================
-    # MÉTODOS AUXILIARES
-    # ============================================
-    
     def _obtener_usuarios_departamento(self, id_departamento: int) -> List[Usuario]:
-        """
-        Obtiene UN usuario funcionario aleatorio del departamento
-        Solo usuarios con nivel_jerarquia = 3 (Funcionario)
-        """
+        """Obtiene UN funcionario aleatorio del departamento"""
         try:
-            # Obtener TODOS los funcionarios del departamento
             funcionarios = self.db.query(Usuario).join(
                 Persona, Usuario.id_persona == Persona.id_persona
             ).join(
@@ -514,62 +431,20 @@ class EscalamientoService:
                 Persona.estado == 'activo',
                 UsuarioRol.activo == True,
                 Rol.activo == True,
-                Rol.nivel_jerarquia == 3  # Solo funcionarios
+                Rol.nivel_jerarquia == 3
             ).distinct().all()
             
             if not funcionarios:
-                logger.warning(f"No hay funcionarios disponibles en departamento {id_departamento}")
+                logger.warning(f"No hay funcionarios en departamento {id_departamento}")
                 return []
             
-            # Seleccionar UNO aleatorio
             funcionario_seleccionado = random.choice(funcionarios)
-            logger.info(f"✅ Funcionario seleccionado: {funcionario_seleccionado.username} (ID: {funcionario_seleccionado.id_usuario})")
+            logger.info(f"✅ Funcionario seleccionado: {funcionario_seleccionado.username}")
             
             return [funcionario_seleccionado]
             
         except Exception as e:
-            logger.error(f"Error obteniendo funcionario del departamento: {e}")
-            return []
-    
-    def _crear_notificaciones(
-        self,
-        usuarios: List[Usuario],
-        id_agente: int,
-        agente_nombre: str,
-        session_id: str,
-        conversacion_sync_id: Optional[int]
-    ) -> List[NotificacionUsuario]:
-        """
-        Crea notificaciones para los usuarios
-        """
-        notificaciones = []
-        
-        try:
-            for usuario in usuarios:
-                notif = NotificacionUsuario(
-                    id_usuario=usuario.id_usuario,
-                    id_agente=id_agente,
-                    tipo=TipoNotificacionEnum.urgente,
-                    titulo=f'Nueva conversación escalada - {agente_nombre}',
-                    mensaje=f'Se ha escalado una conversación del agente {agente_nombre} que requiere atención humana.',
-                    icono='user-circle',
-                    url_accion=f'/conversaciones-escaladas/{session_id}',
-                    datos_adicionales=f'{{"session_id": "{session_id}", "conversacion_sync_id": {conversacion_sync_id}, "id_agente": {id_agente}}}',
-                    leida=False,
-                    fecha_creacion=datetime.utcnow()
-                )
-                
-                self.db.add(notif)
-                notificaciones.append(notif)
-            
-            self.db.commit()
-            
-            logger.info(f"📬 {len(notificaciones)} notificaciones creadas")
-            return notificaciones
-            
-        except Exception as e:
-            self.db.rollback()
-            logger.error(f"❌ Error creando notificaciones: {e}")
+            logger.error(f"Error obteniendo funcionario: {e}")
             return []
     
     async def responder_como_humano(
@@ -579,11 +454,8 @@ class EscalamientoService:
         id_usuario: int,
         nombre_usuario: str
     ) -> Dict[str, Any]:
-        """
-        Agrega respuesta de un humano a la conversación
-        """
+        """Agrega respuesta de un humano"""
         try:
-            # Agregar mensaje en MongoDB con role='human_agent'
             message_data = MessageCreate(
                 role=MessageRole.human_agent,
                 content=mensaje,
@@ -593,7 +465,6 @@ class EscalamientoService:
             
             conversation = await ConversationService.add_message(session_id, message_data)
             
-            # Actualizar metadata si es la primera respuesta humana
             if not conversation.metadata.fecha_atencion_humana:
                 update_data = ConversationUpdate(
                     escalado_a_usuario_id=id_usuario,
@@ -601,7 +472,7 @@ class EscalamientoService:
                 )
                 await ConversationService.update_conversation(session_id, update_data)
             
-            logger.info(f"💬 Respuesta humana agregada: {nombre_usuario} → {session_id}")
+            logger.info(f"💬 Respuesta humana: {nombre_usuario} → {session_id}")
             
             return {
                 "success": True,
@@ -620,9 +491,7 @@ class EscalamientoService:
         id_departamento: Optional[int] = None,
         solo_pendientes: bool = True
     ) -> List[Dict[str, Any]]:
-        """
-        Obtiene conversaciones escaladas pendientes de atención
-        """
+        """Obtiene conversaciones escaladas"""
         try:
             query = self.db.query(ConversacionSync).filter(
                 ConversacionSync.estado == EstadoConversacionEnum.escalada_humano
@@ -633,7 +502,6 @@ class EscalamientoService:
                     ConversacionSync.requirio_atencion_humana == True
                 )
             
-            # Si hay filtro de departamento, join con Agente
             if id_departamento:
                 query = query.join(
                     AgenteVirtual, 
@@ -646,7 +514,7 @@ class EscalamientoService:
                 ConversacionSync.fecha_inicio.desc()
             ).limit(50).all()
             
-            logger.info(f"📋 Conversaciones escaladas encontradas: {len(conversaciones)}")
+            logger.info(f"📋 Conversaciones escaladas: {len(conversaciones)}")
             
             return [
                 {

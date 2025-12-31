@@ -1,4 +1,4 @@
-# routers/websocket_router.py (ARCHIVO NUEVO)
+# routers/websocket_router.py
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.orm import Session
 from database.database import get_db
@@ -23,6 +23,11 @@ async def websocket_chat_endpoint(
 ):
     """
     WebSocket para chat en tiempo real
+    
+    🔥 CAMBIOS:
+    - SIEMPRE guarda mensajes en MongoDB (widget + humano)
+    - Corregida indentación crítica
+    - Mejor manejo de nombres de usuario
     
     Clientes:
     - Widget (usuario final)
@@ -53,23 +58,26 @@ async def websocket_chat_endpoint(
     escalamiento_service = EscalamientoService(db)
     
     try:
-        # Verificar si conversación existe y está escalada
+        # ============================================
+        # VERIFICAR SI CONVERSACIÓN ESTÁ ESCALADA
+        # ============================================
         conversation = await ConversationService.get_conversation_by_session(session_id)
         
         if conversation and conversation.metadata.estado == "escalada_humano":
-            # ✅ CORREGIDO: Usar el nombre correcto del atributo
             await manager.send_personal_message({
                 "type": "escalamiento_info",
                 "escalado": True,
                 "usuario_asignado": conversation.metadata.escalado_a_usuario_id,
-                "usuario_nombre": conversation.metadata.escalado_a_usuario_nombre  # ← CORRECTO
+                "usuario_nombre": conversation.metadata.escalado_a_usuario_nombre
             }, websocket)
             
             logger.info(f"✅ WebSocket conectado a conversación escalada: {session_id} → {conversation.metadata.escalado_a_usuario_nombre}")
         else:
             logger.info(f"✅ WebSocket conectado a conversación normal: {session_id}")
         
-        # Loop principal
+        # ============================================
+        # LOOP PRINCIPAL
+        # ============================================
         while True:
             # Recibir mensaje
             data = await websocket.receive_text()
@@ -80,31 +88,29 @@ async def websocket_chat_endpoint(
             # ============================================
             # TIPO: message (enviar mensaje)
             # ============================================
-
-
-
-
             if message_type == "message":
                 content = message_data.get("content")
                 user_id = message_data.get("user_id")
                 user_name = message_data.get("user_name")
                 
                 if not content:
+                    logger.warning("⚠️ Mensaje sin content, ignorando...")
                     continue
                 
-                # 🔥 DEBUG LOG
                 logger.info(f"📨 Mensaje WebSocket recibido:")
-                logger.info(f"   - type: {message_type}")
+                logger.info(f"   - session_id: {session_id}")
                 logger.info(f"   - user_id: {user_id}")
                 logger.info(f"   - user_name: '{user_name}'")
                 logger.info(f"   - content: {content[:50]}...")
                 
-                # Determinar rol
+                # ============================================
+                # 🔥 DETERMINAR ROL Y NOMBRE
+                # ============================================
                 if user_id:
                     # Es un humano respondiendo
                     role = MessageRole.human_agent
                     
-                    # 🔥 Si no viene user_name, buscar en la base de datos
+                    # 🔥 Si no viene user_name, buscar en BD
                     if not user_name or user_name == "Usuario":
                         logger.warning(f"⚠️ user_name vacío o genérico, buscando en BD...")
                         try:
@@ -116,7 +122,7 @@ async def websocket_chat_endpoint(
                             ).first()
                             
                             if usuario and usuario.persona:
-                                user_name = f"{usuario.persona.nombres} {usuario.persona.primer_apellido}"
+                                user_name = f"{usuario.persona.nombres} {usuario.persona.apellido}"
                                 logger.info(f"✅ Nombre obtenido de BD: '{user_name}'")
                             else:
                                 user_name = "Agente Humano"
@@ -125,7 +131,19 @@ async def websocket_chat_endpoint(
                             logger.error(f"❌ Error obteniendo nombre de usuario: {e}")
                             user_name = "Agente Humano"
                     
-                    # Guardar en MongoDB
+                    logger.info(f"💬 Mensaje de humano '{user_name}' (ID: {user_id})")
+                    
+                else:
+                    # Es el usuario final (widget)
+                    role = MessageRole.user
+                    user_name = None
+                    user_id = None
+                    logger.info(f"💬 Mensaje de usuario widget")
+                
+                # ============================================
+                # 🔥 GUARDAR EN MONGODB (SIEMPRE)
+                # ============================================
+                try:
                     message = MessageCreate(
                         role=role,
                         content=content,
@@ -133,24 +151,27 @@ async def websocket_chat_endpoint(
                         user_name=user_name
                     )
                     await ConversationService.add_message(session_id, message)
-                    
-                    # 🔥 Broadcast con el nombre correcto
-                    broadcast_message = {
-                        "type": "message",
-                        "role": "human_agent",
-                        "content": content,
-                        "user_id": user_id,
-                        "user_name": user_name,
-                        "timestamp": datetime.utcnow().isoformat()
-                    }
-                    
-                    logger.info(f"📡 Broadcasting mensaje: {broadcast_message}")
-                    await manager.broadcast(broadcast_message, session_id)
-                    
-                    logger.info(f"💬 Mensaje de humano '{user_name}' (ID: {user_id}) en session {session_id}")
-
-
-                        
+                    logger.info(f"✅ Mensaje guardado en MongoDB: role={role}, session={session_id}")
+                except Exception as e:
+                    logger.error(f"❌ Error guardando mensaje en MongoDB: {e}")
+                    import traceback
+                    traceback.print_exc()
+                
+                # ============================================
+                # BROADCAST A TODOS LOS CONECTADOS
+                # ============================================
+                broadcast_message = {
+                    "type": "message",
+                    "role": "human_agent" if role == MessageRole.human_agent else "user",
+                    "content": content,
+                    "user_id": user_id,
+                    "user_name": user_name,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                await manager.broadcast(broadcast_message, session_id)
+                logger.info(f"📡 Mensaje broadcast a session {session_id}")
+            
             # ============================================
             # TIPO: typing (indicador de escritura)
             # ============================================
@@ -162,6 +183,8 @@ async def websocket_chat_endpoint(
                     "user_name": user_name,
                     "is_typing": message_data.get("is_typing", True)
                 }, session_id)
+                
+                logger.debug(f"⌨️ Typing indicator: {user_name} en {session_id}")
             
             # ============================================
             # TIPO: join (notificar que alguien se unió)
@@ -169,14 +192,22 @@ async def websocket_chat_endpoint(
             elif message_type == "join":
                 user_name = message_data.get("user_name", "Usuario")
                 role = message_data.get("role", "user")
+                user_id = message_data.get("user_id")
                 
                 await manager.broadcast({
                     "type": "user_joined",
                     "user_name": user_name,
+                    "user_id": user_id,
                     "role": role
                 }, session_id)
                 
                 logger.info(f"👋 {user_name} ({role}) se unió a session {session_id}")
+            
+            # ============================================
+            # TIPO: desconocido
+            # ============================================
+            else:
+                logger.warning(f"⚠️ Tipo de mensaje desconocido: {message_type}")
     
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
@@ -191,12 +222,4 @@ async def websocket_chat_endpoint(
             })
         except:
             pass
-        manager.disconnect(websocket, session_id)
-    
-    except WebSocketDisconnect:
-        manager.disconnect(websocket, session_id)
-        logger.info(f"🔌 Cliente desconectado de session {session_id}")
-    
-    except Exception as e:
-        logger.error(f"❌ Error en WebSocket: {e}")
         manager.disconnect(websocket, session_id)

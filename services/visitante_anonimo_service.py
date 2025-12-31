@@ -54,6 +54,61 @@ class VisitanteAnonimoService:
         """Incrementar contador de mensajes"""
         return self.repo.incrementar_mensajes(id_visitante, cantidad)
     
+
+
+# visitante_anonimo_service.py
+
+    def obtener_o_crear_visitante(
+        self,
+        session_id: str,
+        ip_origen: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        dispositivo: Optional[str] = None,
+        navegador: Optional[str] = None,
+        sistema_operativo: Optional[str] = None
+    ) -> VisitanteAnonimo:
+        """
+        Obtiene un visitante existente o crea uno nuevo
+        
+        Args:
+            session_id: Identificador único de sesión
+            ip_origen: IP del visitante
+            user_agent: User agent completo
+            dispositivo: Tipo de dispositivo (desktop/mobile/tablet)
+            navegador: Nombre del navegador
+            sistema_operativo: Sistema operativo
+            
+        Returns:
+            Instancia de VisitanteAnonimo
+        """
+        try:
+            # Intentar obtener visitante existente
+            visitante = self.repo.get_by_sesion(session_id)
+            
+            if visitante:
+                # Actualizar última visita
+                self.registrar_actividad(visitante.id_visitante)
+                return visitante
+            
+        except NotFoundException:
+            # No existe, crear nuevo
+            pass
+        
+        # Crear nuevo visitante
+        visitante_data = VisitanteAnonimoCreate(
+            identificador_sesion=session_id,
+            ip_origen=ip_origen or "unknown",
+            user_agent=user_agent or "unknown",
+            dispositivo=dispositivo,
+            navegador=navegador,
+            sistema_operativo=sistema_operativo
+        )
+        
+        return self.crear_visitante(visitante_data)
+
+
+
+    
     def obtener_estadisticas_visitante(self, id_visitante: int) -> dict:
         visitante = self.repo.get_by_id(id_visitante)
         stats = self.repo.get_estadisticas_visitante(id_visitante)

@@ -1,14 +1,14 @@
 # app/routers/chat_auto_router.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request  # ← AGREGAR Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database.database import get_db
 from services.agent_classifier import AgentClassifier
-from services.escalamiento_service import EscalamientoService  # ← AGREGAR
+from services.escalamiento_service import EscalamientoService
 from ollama.ollama_agent_service import OllamaAgentService
 from utils.json_utils import safe_json_dumps
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 import asyncio
 import logging
@@ -17,23 +17,45 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
+# 🔥 NUEVO: Modelo para información del cliente
+class ClientInfo(BaseModel):
+    """Información del cliente/navegador"""
+    user_agent: str
+    dispositivo: str  # 'desktop', 'mobile', 'tablet'
+    navegador: str
+    sistema_operativo: str
+    pantalla: Optional[Dict[str, int]] = None
+    idioma: Optional[str] = None
+
 class AutoChatRequest(BaseModel):
     message: str
     departamento_codigo: Optional[str] = None
     session_id: str
     origin: Optional[str] = "web"
+    client_info: Optional[ClientInfo] = None  # 🔥 NUEVO
     k: Optional[int] = None
     use_reranking: Optional[bool] = None
     temperatura: Optional[float] = None
     max_tokens: Optional[int] = None
 
 @router.post("/auto")
-def chat_auto(payload: AutoChatRequest, db: Session = Depends(get_db)):
+def chat_auto(
+    request: Request,  # 🔥 AGREGAR
+    payload: AutoChatRequest, 
+    db: Session = Depends(get_db)
+):
     """
     Clasifica automáticamente y responde con el agente apropiado (sin streaming)
     🔥 MODO STATELESS: No guarda en MongoDB, cada pregunta es independiente
     """
     classifier = AgentClassifier(db)
+    
+    # 🔥 EXTRAER INFORMACIÓN DEL REQUEST
+    ip_origen = request.client.host if request.client else None
+    user_agent = payload.client_info.user_agent if payload.client_info else request.headers.get("user-agent")
+    dispositivo = payload.client_info.dispositivo if payload.client_info else None
+    navegador = payload.client_info.navegador if payload.client_info else None
+    sistema_operativo = payload.client_info.sistema_operativo if payload.client_info else None
     
     agent_id = classifier.classify(payload.message)
     
@@ -51,6 +73,11 @@ def chat_auto(payload: AutoChatRequest, db: Session = Depends(get_db)):
             pregunta=payload.message,
             session_id=payload.session_id,
             origin=payload.origin,
+            ip_origen=ip_origen,  # 🔥 NUEVO
+            user_agent=user_agent,  # 🔥 NUEVO
+            dispositivo=dispositivo,  # 🔥 NUEVO
+            navegador=navegador,  # 🔥 NUEVO
+            sistema_operativo=sistema_operativo,  # 🔥 NUEVO
             k=payload.k,
             use_reranking=payload.use_reranking,
             temperatura=payload.temperatura,
@@ -68,7 +95,11 @@ def chat_auto(payload: AutoChatRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/auto/stream")
-async def chat_auto_stream(payload: AutoChatRequest, db: Session = Depends(get_db)):
+async def chat_auto_stream(
+    request: Request,  # 🔥 AGREGAR
+    payload: AutoChatRequest, 
+    db: Session = Depends(get_db)
+):
     """
     Clasifica automáticamente y responde con streaming
     
@@ -78,20 +109,26 @@ async def chat_auto_stream(payload: AutoChatRequest, db: Session = Depends(get_d
     """
     classifier = AgentClassifier(db)
     service = OllamaAgentService(db)
-    escalamiento_service = EscalamientoService(db)  # ← AGREGAR
+    escalamiento_service = EscalamientoService(db)
+    
+    # 🔥 EXTRAER INFORMACIÓN DEL REQUEST
+    ip_origen = request.client.host if request.client else None
+    user_agent = payload.client_info.user_agent if payload.client_info else request.headers.get("user-agent")
+    dispositivo = payload.client_info.dispositivo if payload.client_info else None
+    navegador = payload.client_info.navegador if payload.client_info else None
+    sistema_operativo = payload.client_info.sistema_operativo if payload.client_info else None
     
     async def event_generator():
         last_event_time = datetime.now()
         heartbeat_interval = 15
         
         try:
-            # 🔥 1. DETECTAR SI QUIERE HABLAR CON HUMANO
+            # 1. DETECTAR SI QUIERE HABLAR CON HUMANO
             quiere_humano = escalamiento_service.detectar_intencion_escalamiento(payload.message)
             
             if quiere_humano:
                 logger.info("⚠️ Escalamiento detectado en modo AUTO (no permitido)")
 
-                # ✅ Construir el evento FUERA del yield (igual que en chat_router.py)
                 evento_error_escalamiento = {
                     "type": "error",
                     "content": (
@@ -105,7 +142,6 @@ async def chat_auto_stream(payload: AutoChatRequest, db: Session = Depends(get_d
                 yield f"data: {safe_json_dumps(evento_error_escalamiento)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
-
             
             # 2. Clasificar agente
             yield f"data: {safe_json_dumps({'type': 'status', 'content': 'Clasificando agente...'})}\n\n"
@@ -128,7 +164,12 @@ async def chat_auto_stream(payload: AutoChatRequest, db: Session = Depends(get_d
                 pregunta=payload.message,
                 session_id=payload.session_id,
                 origin=payload.origin,
-                save_to_mongo=False,
+                ip_origen=ip_origen,  # 🔥 NUEVO
+                user_agent=user_agent,  # 🔥 NUEVO
+                dispositivo=dispositivo,  # 🔥 NUEVO
+                navegador=navegador,  # 🔥 NUEVO
+                sistema_operativo=sistema_operativo,  # 🔥 NUEVO
+                
                 k=payload.k,
                 use_reranking=payload.use_reranking,
                 temperatura=payload.temperatura,

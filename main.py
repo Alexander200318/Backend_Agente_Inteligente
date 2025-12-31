@@ -44,10 +44,9 @@ async def lifespan(app: FastAPI):
     await init_mongodb()
     print("✅ MongoDB inicializado")
     
-    # 🔥 NUEVO: Iniciar scheduler para auto-finalización de conversaciones
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     scheduler = AsyncIOScheduler()
-    
+
     async def finalizar_conversaciones_inactivas_job():
         """Job para finalizar conversaciones inactivas cada 10 minutos"""
         from database.database import SessionLocal
@@ -59,7 +58,7 @@ async def lifespan(app: FastAPI):
         
         try:
             service = EscalamientoService(db)
-            resultado = await service.finalizar_conversaciones_inactivas(timeout_minutos=30)
+            resultado = await service.finalizar_conversaciones_inactivas(timeout_minutos=1)
             logger.info(f"✅ Auto-finalización ejecutada: {resultado}")
             print(f"🧹 Conversaciones finalizadas: MongoDB={resultado['conversaciones_finalizadas_mongo']}, MySQL={resultado['conversaciones_finalizadas_mysql']}")
         except Exception as e:
@@ -67,7 +66,7 @@ async def lifespan(app: FastAPI):
             print(f"❌ Error en auto-finalización: {e}")
         finally:
             db.close()
-    
+
     # Programar tarea cada 10 minutos
     scheduler.add_job(
         finalizar_conversaciones_inactivas_job, 
@@ -78,11 +77,16 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
     print("✅ Scheduler iniciado - Auto-finalización de conversaciones cada 10 minutos")
-    
-    # Guardar scheduler en app state para poder detenerlo después
+
+    # Guardar scheduler en app state
     app.state.scheduler = scheduler
-    
+    # ↑↑↑ HASTA AQUÍ
+
     yield
+  
+
+    
+
     
     # ==================== SHUTDOWN ====================
     print("👋 Cerrando aplicación...")
