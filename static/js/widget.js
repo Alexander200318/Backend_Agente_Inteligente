@@ -699,7 +699,18 @@ async function cargarAgentes() {
 
         const agentes = await res.json();
         
-        agentes.forEach((agente) => {
+        // 🔥 FILTRAR SOLO AGENTES ACTIVOS
+        const agentesActivos = agentes.filter(agente => agente.activo === true);
+        
+        if (agentesActivos.length === 0) {
+            console.warn('⚠️ No hay agentes activos disponibles');
+            return;
+        }
+        
+        // 🔥 LIMPIAR CONTENEDOR ANTES DE AGREGAR NUEVOS
+        agentCards.innerHTML = '';
+        
+        agentesActivos.forEach((agente) => {
             const card = document.createElement('div');
             card.className = 'agent-card';
             card.dataset.agentId = agente.id_agente;
@@ -732,10 +743,15 @@ async function cargarAgentes() {
             agentCards.appendChild(card);
         });
         
+        console.log(`✅ ${agentesActivos.length} agentes activos cargados`);
+        
     } catch (err) {
         console.error('Error al cargar agentes:', err);
     }
 }
+
+
+
 
 // ==================== FUNCIONES ====================
 async function inicializarChat() {
