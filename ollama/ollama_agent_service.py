@@ -505,6 +505,7 @@ class OllamaAgentService:
 
             full_response = ""
             
+
             try:
                 for token in self.client.generate_stream(
                     model_name=model_name,
@@ -521,8 +522,26 @@ class OllamaAgentService:
                     }
                 
                 # ============================================
-                # PASO 8: 🔥 NO GUARDAR EN MONGODB (modo normal)
+                # PASO 8: 🔥 GUARDAR RESPUESTA DEL AGENTE EN MONGODB
                 # ============================================
+                if conversation:
+                    try:
+                        assistant_message = MessageCreate(
+                            role=MessageRole.assistant,
+                            content=full_response,
+                            sources_used=sources_count,
+                            model_used=model_name
+                        )
+                        await ConversationService.add_message(session_id, assistant_message)
+                        
+                        # Incrementar mensajes del visitante
+                        if visitante:
+                            self.visitante_service.incrementar_mensajes(visitante.id_visitante, cantidad=1)
+                        
+                        logger.info(f"✅ Respuesta del agente guardada en MongoDB")
+                    except Exception as save_error:
+                        logger.error(f"❌ Error guardando respuesta del agente: {save_error}")
+                
                 yield {
                     "type": "done",
                     "content": full_response,
@@ -533,7 +552,7 @@ class OllamaAgentService:
                         "origin": origin,
                         "sources_used": sources_count,
                         "model_used": model_name,
-                        "saved_to_mongo": False,  # 🔥 No se guardó
+                        "saved_to_mongo": True,  # 🔥 Ahora SÍ se guarda
                         "params_used": {
                             "temperatura": temperatura_final,
                             "max_tokens": max_tokens_final,
@@ -543,43 +562,69 @@ class OllamaAgentService:
                     }
                 }
 
+
+
+
+
+
             except Exception as e:
-                error_msg = str(e)
-                print(f"❌ Error con Ollama: {error_msg}")
-                
-                if "not found" in error_msg.lower():
-                    yield {
-                        "type": "status",
-                        "content": f"⚠️ Modelo {model_name} no disponible, usando llama3..."
-                    }
-                    
-                    full_response = ""
-                    for token in self.client.generate_stream(
-                        model_name="llama3",
-                        prompt=prompt,
-                        temperature=temperatura_final,
-                        max_tokens=max_tokens_final,
-                        options={"keep_alive": "15m"}
-                    ):
-                        full_response += token
-                        yield {
-                            "type": "token",
-                            "content": token
-                        }
-                    
-                    yield {
-                        "type": "done",
-                        "content": full_response,
-                        "metadata": {
-                            "agent_id": id_agente,
-                            "agent_name": agente.nombre_agente,
-                            "model_used": "llama3 (fallback)",
-                            "saved_to_mongo": False,
-                            "warning": f"Modelo {model_name} no disponible"
-                        }
-                    }
-                else:
-                    raise Exception(f"Error en Ollama: {error_msg}")
+                            error_msg = str(e)
+                            print(f"❌ Error con Ollama: {error_msg}")
+                            
+                            if "not found" in error_msg.lower():
+                                yield {
+                                    "type": "status",
+                                    "content": f"⚠️ Modelo {model_name} no disponible, usando llama3..."
+                                }
+                                
+                                full_response = ""
+                                for token in self.client.generate_stream(
+                                    model_name="llama3",
+                                    prompt=prompt,
+                                    temperature=temperatura_final,
+                                    max_tokens=max_tokens_final,
+                                    options={"keep_alive": "15m"}
+                                ):
+                                    full_response += token
+                                    yield {
+                                        "type": "token",
+                                        "content": token
+                                    }
+                                
+                                # 🔥 GUARDAR RESPUESTA DEL AGENTE (fallback)
+                                if conversation:
+                                    try:
+                                        assistant_message = MessageCreate(
+                                            role=MessageRole.assistant,
+                                            content=full_response,
+                                            sources_used=sources_count,
+                                            model_used="llama3 (fallback)"
+                                        )
+                                        await ConversationService.add_message(session_id, assistant_message)
+                                        
+                                        # Incrementar mensajes del visitante
+                                        if visitante:
+                                            self.visitante_service.incrementar_mensajes(visitante.id_visitante, cantidad=1)
+                                        
+                                        logger.info(f"✅ Respuesta del agente guardada (fallback)")
+                                    except Exception as save_error:
+                                        logger.error(f"❌ Error guardando respuesta del agente: {save_error}")
+                                
+                                yield {
+                                    "type": "done",
+                                    "content": full_response,
+                                    "metadata": {
+                                        "agent_id": id_agente,
+                                        "agent_name": agente.nombre_agente,
+                                        "model_used": "llama3 (fallback)",
+                                        "saved_to_mongo": True,
+                                        "warning": f"Modelo {model_name} no disponible"
+                                    }
+                                }
+                            else:
+                                raise Exception(f"Error en Ollama: {error_msg}")
+
+
 
         except Exception as e:
             yield {

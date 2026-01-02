@@ -52,25 +52,167 @@ let humanAgentName = null;
 })();
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
+
+
+
+// ==================== GESTIÓN DE SESIONES ====================
 const SESSION_STORAGE_KEY = 'tecai_session_id';
+const SESSION_TIMESTAMP_KEY = 'tecai_session_timestamp';
+const SESSION_PAGE_KEY = 'tecai_session_page';
+const SESSION_TIMEOUT_MINUTES = 10; // 🔥 Tiempo de expiración
 
 let SESSION_ID = null;
-try {
-    SESSION_ID = localStorage.getItem(SESSION_STORAGE_KEY);
-} catch (e) {
-    console.warn('localStorage no disponible, usando session_id en memoria');
+let CURRENT_PAGE = null;
+
+
+/**
+ * Obtener identificador único de la página actual
+ */
+function obtenerIdentificadorPagina() {
+    // Usar pathname + hash como identificador único
+    const path = window.location.pathname;
+    const hash = window.location.hash;
+    const page = path + hash;
+    
+    // Crear un hash simple de la URL
+    let hashCode = 0;
+    for (let i = 0; i < page.length; i++) {
+        const char = page.charCodeAt(i);
+        hashCode = ((hashCode << 5) - hashCode) + char;
+        hashCode = hashCode & hashCode; // Convert to 32bit integer
+    }
+    
+    return Math.abs(hashCode).toString(36);
 }
 
-if (!SESSION_ID) {
-    SESSION_ID = 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10);
+
+function generarSessionID() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).slice(2, 10);
+    const pageId = obtenerIdentificadorPagina();
+    
+    // Formato: web-TIMESTAMP-RANDOM-PAGEID
+    return `web-${timestamp}-${random}-${pageId}`;
+}
+
+function crearNuevaSesion() {
+    const nuevoSessionId = generarSessionID();
+    const currentPage = window.location.pathname + window.location.hash;
+    
     try {
-        localStorage.setItem(SESSION_STORAGE_KEY, SESSION_ID);
+        localStorage.setItem(SESSION_STORAGE_KEY, nuevoSessionId);
+        localStorage.setItem(SESSION_TIMESTAMP_KEY, Date.now().toString());
+        localStorage.setItem(SESSION_PAGE_KEY, currentPage);
+        console.log('🆕 Nueva sesión creada:', nuevoSessionId);
+        console.log('📄 Página:', currentPage);
     } catch (e) {
-        console.warn('No se pudo guardar session_id en localStorage');
+        console.warn('No se pudo guardar sesión en localStorage');
+    }
+    return nuevoSessionId;
+}
+
+function actualizarTimestampSesion() {
+    try {
+        localStorage.setItem(SESSION_TIMESTAMP_KEY, Date.now().toString());
+    } catch (e) {
+        // Ignorar si falla
     }
 }
 
-console.log('🆔 SESSION_ID usado por este widget:', SESSION_ID);
+/**
+ * Verifica si la sesión sigue siendo válida y actualiza timestamp
+ * Retorna true si la sesión es válida, false si expiró
+ */
+function verificarYActualizarSesion() {
+    try {
+        const storedTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
+        const storedPage = localStorage.getItem(SESSION_PAGE_KEY);
+        const currentPage = window.location.pathname + window.location.hash;
+        
+        // Verificar si cambió de página
+        if (storedPage && storedPage !== currentPage) {
+            console.log('📄 Cambio de página detectado → Nueva sesión requerida');
+            SESSION_ID = crearNuevaSesion();
+            CURRENT_PAGE = currentPage;
+            return false;
+        }
+        
+        if (storedTimestamp) {
+            const tiempoTranscurrido = Date.now() - parseInt(storedTimestamp);
+            const minutos = tiempoTranscurrido / 1000 / 60;
+            
+            if (minutos >= SESSION_TIMEOUT_MINUTES) {
+                console.log(`⏱️ Sesión expirada (${minutos.toFixed(1)} min) → Creando nueva`);
+                SESSION_ID = crearNuevaSesion();
+                return false;
+            }
+        }
+        
+        // Sesión válida, actualizar timestamp
+        actualizarTimestampSesion();
+        return true;
+        
+    } catch (e) {
+        console.warn('Error verificando sesión:', e);
+        return true; // Continuar en caso de error
+    }
+}
+
+function obtenerOGenerarSession() {
+    try {
+        const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+        const storedTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
+        const storedPage = localStorage.getItem(SESSION_PAGE_KEY);
+        const currentPage = window.location.pathname + window.location.hash;
+        
+        // 🔥 Verificar si es una página diferente
+        if (storedPage && storedPage !== currentPage) {
+            console.log('📄 Página diferente detectada');
+            console.log('   Anterior:', storedPage);
+            console.log('   Actual:', currentPage);
+            console.log('   → Creando nueva sesión');
+            return crearNuevaSesion();
+        }
+        
+        if (storedSessionId && storedTimestamp) {
+            const tiempoTranscurrido = Date.now() - parseInt(storedTimestamp);
+            const minutos = tiempoTranscurrido / 1000 / 60;
+            
+            // 🔥 Verificar si expiró por timeout
+            if (minutos < SESSION_TIMEOUT_MINUTES) {
+                console.log(`♻️ Sesión activa (${minutos.toFixed(1)} min desde última actividad)`);
+                console.log(`   Session ID: ${storedSessionId}`);
+                return storedSessionId;
+            } else {
+                console.log(`⏱️ SESIÓN EXPIRADA (${minutos.toFixed(1)} min)`);
+                console.log('   → La conversación anterior se ha cerrado');
+                console.log('   → Creando nueva sesión');
+                return crearNuevaSesion();
+            }
+        }
+        
+        // No hay sesión previa
+        console.log('🆕 Primera visita o sesión no encontrada');
+        return crearNuevaSesion();
+        
+    } catch (e) {
+        console.warn('localStorage no disponible, usando session_id temporal');
+        return generarSessionID();
+    }
+}
+
+// Inicializar sesión
+SESSION_ID = obtenerOGenerarSession();
+CURRENT_PAGE = window.location.pathname + window.location.hash;
+console.log('🆔 SESSION_ID activo:', SESSION_ID);
+console.log('📄 Página actual:', CURRENT_PAGE);
+
+
+
+
+
+
+
 
 // Variables globales
 let speechSynthesis = window.speechSynthesis;
@@ -175,19 +317,34 @@ document.addEventListener('DOMContentLoaded', () => {
     micButton = document.getElementById('mic-button');
 
     chatButton.addEventListener('click', () => {
+        // 🔥 Verificar si la sesión expiró antes de abrir
+        const sessionValida = verificarYActualizarSesion();
+        
         chatContainer.classList.add('active');
-        if (chatMessages.children.length === 0) {
+        
+        if (chatMessages.children.length === 0 || !sessionValida) {
+            // Limpiar mensajes si la sesión expiró
+            if (!sessionValida) {
+                chatMessages.innerHTML = '';
+            }
             inicializarChat();
         }
+        
         chatInput.focus();
     });
 
     closeChat.addEventListener('click', () => {
         chatContainer.classList.remove('active');
+        
+        // Cerrar WebSocket si existe
         if (websocket) {
             websocket.close();
             websocket = null;
         }
+        
+        actualizarTimestampSesion();
+        console.log('🚪 Chat cerrado → Generando nueva sesión para próxima visita');
+   
     });
 
     sendButton.addEventListener('click', sendMessage);
@@ -771,6 +928,24 @@ async function sendMessage() {
     const mensaje = chatInput.value.trim();
     if (!mensaje) return;
 
+    // 🔥 Verificar sesión antes de enviar
+    const sessionValida = verificarYActualizarSesion();
+
+
+    if (!sessionValida) {
+        // La sesión expiró, mostrar mensaje y limpiar chat
+        chatMessages.innerHTML = '';
+        addBotMessage('⏱️ Tu sesión anterior expiró. Iniciando nueva conversación...');
+        
+        // Esperar un momento y luego permitir el envío con la nueva sesión
+        setTimeout(() => {
+            chatInput.value = mensaje; // Restaurar el mensaje
+            sendMessage(); // Reintentar envío
+        }, 1000);
+        return;
+    }
+
+
     // WebSocket check...
     if (isEscalated && websocket && websocket.readyState === WebSocket.OPEN) {
         addUserMessage(mensaje);
@@ -907,6 +1082,17 @@ async function sendMessage() {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+
+function mostrarNotificacionExpiracion(minutosTranscurridos) {
+    const mensaje = `⏱️ Tu conversación anterior finalizó por inactividad (${minutosTranscurridos.toFixed(0)} minutos).
+
+🆕 Se ha iniciado una nueva conversación.
+
+💡 Las conversaciones se cierran automáticamente después de ${SESSION_TIMEOUT_MINUTES} minutos de inactividad.`;
+    
+    addBotMessage(mensaje);
 }
 
 async function processStream(response) {
