@@ -9,6 +9,8 @@ from schemas.categoria_schemas import (
     CategoriaCreate,
     CategoriaUpdate,
 )
+from auth.dependencies import get_current_user
+from models.usuario import Usuario  
 
 router = APIRouter(
     prefix="/categorias",
@@ -25,9 +27,17 @@ router = APIRouter(
 )
 def crear_categoria(
     data: CategoriaCreate,
+    current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return CategoriaService(db).crear_categoria(data)
+    """
+    Crea una categoría con el usuario autenticado.
+    El creado_por se obtiene automáticamente del token JWT.
+    """
+    data_dict = data.dict()
+    data_dict['creado_por'] = current_user.id_usuario  
+    
+    return CategoriaService(db).crear_categoria_con_usuario(data_dict)
 
 # ======================================================
 # 🔹 Listar categorías con filtros opcionales
@@ -84,11 +94,14 @@ def listar_por_agente(
 def actualizar_categoria(
     id_categoria: int,
     data: CategoriaUpdate,
+    current_user: Usuario = Depends(get_current_user),  
     db: Session = Depends(get_db)
 ):
-    return CategoriaService(db).actualizar_categoria(
+    data_dict = data.dict(exclude_unset=True)
+    
+    return CategoriaService(db).actualizar_categoria_con_usuario(
         id_categoria=id_categoria,
-        data=data
+        data=data_dict
     )
 
 # ======================================================
@@ -100,7 +113,11 @@ def actualizar_categoria(
 )
 def eliminar_categoria(
     id_categoria: int,
+    current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Elimina una categoría. Requiere autenticación.
+    """
     CategoriaService(db).eliminar_categoria(id_categoria)
     return {"detail": "Categoría eliminada correctamente"}
