@@ -10,6 +10,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 import re
 from core.config import settings
+from datetime import datetime, timedelta
+from typing import Optional
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
@@ -284,3 +286,60 @@ def get_client_ip(request) -> str:
         return real_ip
     
     return request.client.host if request.client else "unknown"
+
+# ============================================
+# CONFIGURACIÓN DE SLIDING EXPIRATION
+# ============================================
+SLIDING_TOKEN_RENEW_THRESHOLD_MINUTES = 5  # Renovar si quedan menos de 5 min
+SLIDING_TOKEN_MAX_LIFETIME_HOURS = 8       # Máximo 8 horas de vida total
+
+def should_renew_token(payload: dict) -> bool:
+    """
+    Determinar si un token debe renovarse.
+    Se renueva si quedan menos de 5 minutos para expirar.
+    """
+    try:
+        exp = payload.get("exp")
+        if not exp:
+            return False
+        
+        expiration_time = datetime.fromtimestamp(exp)
+        time_remaining = expiration_time - datetime.utcnow()
+        
+        # Renovar si quedan menos de 5 minutos
+        return time_remaining.total_seconds() < (SLIDING_TOKEN_RENEW_THRESHOLD_MINUTES * 60)
+    except:
+        return False
+
+
+def create_sliding_token(data: dict, original_iat: Optional[int] = None) -> str:
+    """
+    Crear token con sliding expiration.
+    Mantiene el 'iat' (issued at) original para controlar la vida máxima.
+    """
+    to_encode = data.copy()
+    now = datetime.utcnow()
+    
+    # Si es un token renovado, mantener el iat original
+    if original_iat:
+        issued_at = datetime.fromtimestamp(original_iat)
+        
+        # Verificar que no exceda la vida máxima (8 horas)
+        max_lifetime = timedelta(hours=SLIDING_TOKEN_MAX_LIFETIME_HOURS)
+        if now - issued_at > max_lifetime:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Sesión expirada. Por favor inicia sesión nuevamente"
+            )
+        
+        to_encode["iat"] = original_iat
+    else:
+        # Token nuevo
+        to_encode["iat"] = int(now.timestamp())
+    
+    # Establecer nueva expiración (30 minutos desde ahora)
+    expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode["exp"] = int(expire.timestamp())
+    
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
