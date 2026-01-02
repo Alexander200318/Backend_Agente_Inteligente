@@ -19,6 +19,7 @@ class CategoriaBase(BaseModel):
 
 class CategoriaCreate(CategoriaBase):
     id_agente: int
+    eliminado: Optional[bool] = False  # ✅ NUEVO
 
 class CategoriaUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -29,6 +30,7 @@ class CategoriaUpdate(BaseModel):
     color: Optional[str] = None
     orden: Optional[int] = None
     activo: Optional[bool] = None
+    eliminado: Optional[bool] = None  # ✅ NUEVO
     
     @field_validator('id_categoria_padre')
     @classmethod
@@ -39,6 +41,7 @@ class CategoriaResponse(CategoriaBase):
     id_categoria: int
     id_agente: int
     activo: bool
+    eliminado: bool  # ✅ NUEVO
     creado_por: Optional[int] = None
     fecha_creacion: datetime
     

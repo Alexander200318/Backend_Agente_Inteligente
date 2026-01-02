@@ -37,6 +37,7 @@ class Categoria(Base):
 
     # Estado
     activo = Column(Boolean, default=True, index=True)
+    eliminado = Column(Boolean, default=False, index=True) 
 
     # Auditoría
     fecha_creacion = Column(DateTime, server_default=func.current_timestamp())

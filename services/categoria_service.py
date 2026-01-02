@@ -65,14 +65,20 @@ class CategoriaService:
     def listar_categorias(
         self,
         activo: Optional[bool] = None,
-        id_agente: Optional[int] = None
+        id_agente: Optional[int] = None,
+        incluir_eliminados: bool = False  # ✅ NUEVO
     ) -> List[Categoria]:
         """
         Lista todas las categorías con filtros opcionales:
         - activo: True / False
         - id_agente: filtrar por agente
+        - incluir_eliminados: si False (default), excluye eliminados
         """
         query = self.db.query(Categoria)
+
+        # ✅ NUEVO: Excluir eliminados por defecto
+        if not incluir_eliminados:
+            query = query.filter(Categoria.eliminado == False)
 
         if activo is not None:
             query = query.filter(Categoria.activo == activo)
@@ -91,9 +97,10 @@ class CategoriaService:
     def listar_por_agente(
         self,
         id_agente: int,
-        activo: Optional[bool] = None
+        activo: Optional[bool] = None,
+        incluir_eliminados: bool = False  # ✅ NUEVO
     ) -> List[Categoria]:
-        return self.repo.get_by_agente(id_agente, activo)
+        return self.repo.get_by_agente(id_agente, activo, incluir_eliminados)
 
     # ============================================
     # 🔹 Actualizar categoría CON usuario del token
@@ -134,16 +141,15 @@ class CategoriaService:
         return categoria
 
     # ============================================
-    # 🔹 Eliminar categoría (con validaciones)
+    # 🔹 Eliminar categoría (ELIMINADO LÓGICO)
     # ============================================
     def eliminar_categoria(self, id_categoria: int):
         """
-        Elimina una categoría solo si:
-        - NO tiene contenidos asociados
-        - NO tiene subcategorías
+        Elimina una categoría de forma LÓGICA (marca eliminado=True).
+        Valida que NO tenga contenidos ni subcategorías activas.
         """
 
-        # 🔥 Verificar si tiene contenido asociado
+        # 🔥 Verificar si tiene contenido asociado NO eliminado
         contenidos_count = (
             self.db.query(UnidadContenido)
             .filter(UnidadContenido.id_categoria == id_categoria)
@@ -155,17 +161,29 @@ class CategoriaService:
                 f"No se puede eliminar la categoría porque tiene {contenidos_count} contenido(s) asociado(s)"
             )
 
-        # 🔥 Verificar si tiene subcategorías
+        # 🔥 Verificar si tiene subcategorías NO eliminadas
         subcategorias_count = (
             self.db.query(Categoria)
-            .filter(Categoria.id_categoria_padre == id_categoria)
+            .filter(
+                Categoria.id_categoria_padre == id_categoria,
+                Categoria.eliminado == False  # ✅ Solo contar NO eliminadas
+            )
             .count()
         )
 
         if subcategorias_count > 0:
             raise ValidationException(
-                f"No se puede eliminar la categoría porque tiene {subcategorias_count} subcategoría(s)"
+                f"No se puede eliminar la categoría porque tiene {subcategorias_count} subcategoría(s) activa(s)"
             )
 
-        # Si no tiene contenido ni subcategorías, eliminar
-        return self.repo.delete(id_categoria)
+        # ✅ ELIMINADO LÓGICO: usar método del repositorio
+        return self.repo.soft_delete(id_categoria)
+
+    # ============================================
+    # 🔹 NUEVO: Restaurar categoría eliminada
+    # ============================================
+    def restaurar_categoria(self, id_categoria: int):
+        """
+        Restaura una categoría que fue eliminada lógicamente.
+        """
+        return self.repo.restore(id_categoria)

@@ -24,23 +24,51 @@ class CategoriaRepository:
             self.db.rollback()
             raise DatabaseException(str(e))
     
-    def get_by_id(self, id_categoria: int):
-        cat = self.db.query(Categoria).filter(Categoria.id_categoria == id_categoria).first()
+    def get_by_id(self, id_categoria: int, incluir_eliminados: bool = False):
+        """
+        Obtiene una categoría por ID.
+        Por defecto excluye las eliminadas.
+        """
+        query = self.db.query(Categoria).filter(Categoria.id_categoria == id_categoria)
+        
+        # ✅ Excluir eliminados por defecto
+        if not incluir_eliminados:
+            query = query.filter(Categoria.eliminado == False)
+        
+        cat = query.first()
         if not cat:
             raise NotFoundException("Categoria", id_categoria)
         return cat
     
-    def get_by_agente(self, id_agente: int, activo: Optional[bool] = None):
+    def get_by_agente(
+        self, 
+        id_agente: int, 
+        activo: Optional[bool] = None,
+        incluir_eliminados: bool = False  # ✅ NUEVO
+    ):
+        """
+        Lista categorías por agente.
+        Por defecto excluye las eliminadas.
+        """
         query = self.db.query(Categoria).filter(Categoria.id_agente == id_agente)
+        
+        # ✅ Excluir eliminados por defecto
+        if not incluir_eliminados:
+            query = query.filter(Categoria.eliminado == False)
+        
         if activo is not None:
             query = query.filter(Categoria.activo == activo)
+        
         return query.order_by(Categoria.orden, Categoria.nombre).all()
     
     def update(self, id_categoria: int, data: CategoriaUpdate):
         try:
-            cat = self.get_by_id(id_categoria)
+            # ✅ Permitir actualizar incluso si está eliminada (para poder restaurarla)
+            cat = self.get_by_id(id_categoria, incluir_eliminados=True)
+            
             for field, value in data.dict(exclude_unset=True).items():
                 setattr(cat, field, value)
+            
             self.db.commit()
             self.db.refresh(cat)
             return cat
@@ -49,12 +77,47 @@ class CategoriaRepository:
             raise DatabaseException(str(e))
     
     def delete(self, id_categoria: int):
-        cat = self.get_by_id(id_categoria)
+        """
+        ⚠️ ELIMINACIÓN FÍSICA - Solo usar si realmente quieres borrar el registro.
+        Para eliminado lógico, usa update() con eliminado=True
+        """
+        cat = self.get_by_id(id_categoria, incluir_eliminados=True)
         try:
             self.db.delete(cat)
-            """cat.activo = False"""
             self.db.commit()
-            return {"message": "Categoría eliminada", "id": id_categoria}
+            return {"message": "Categoría eliminada físicamente", "id": id_categoria}
+        except Exception as e:
+            self.db.rollback()
+            raise DatabaseException(str(e))
+    
+    # ✅ NUEVO: Método específico para eliminado lógico
+    def soft_delete(self, id_categoria: int):
+        """
+        Eliminado lógico: marca eliminado=True y activo=False
+        """
+        try:
+            cat = self.get_by_id(id_categoria, incluir_eliminados=False)
+            cat.eliminado = True
+            cat.activo = False
+            self.db.commit()
+            self.db.refresh(cat)
+            return cat
+        except Exception as e:
+            self.db.rollback()
+            raise DatabaseException(str(e))
+    
+    # ✅ NUEVO: Método para restaurar categorías eliminadas
+    def restore(self, id_categoria: int):
+        """
+        Restaura una categoría eliminada (eliminado=False)
+        """
+        try:
+            cat = self.get_by_id(id_categoria, incluir_eliminados=True)
+            cat.eliminado = False
+            # No cambiar activo automáticamente, dejar como estaba
+            self.db.commit()
+            self.db.refresh(cat)
+            return cat
         except Exception as e:
             self.db.rollback()
             raise DatabaseException(str(e))

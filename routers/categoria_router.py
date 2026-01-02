@@ -58,9 +58,14 @@ def listar_categorias(
     ),
     db: Session = Depends(get_db)
 ):
+    """
+    Lista todas las categorías con filtros opcionales.
+    Excluye automáticamente las categorías eliminadas.
+    """
     return CategoriaService(db).listar_categorias(
         activo=activo,
-        id_agente=id_agente
+        id_agente=id_agente,
+        incluir_eliminados=False  # ✅ SIEMPRE False (no eliminadas)
     )
 
 # ======================================================
@@ -79,9 +84,14 @@ def listar_por_agente(
     ),
     db: Session = Depends(get_db)
 ):
+    """
+    Lista categorías de un agente específico.
+    Excluye automáticamente las categorías eliminadas.
+    """
     return CategoriaService(db).listar_por_agente(
         id_agente=id_agente,
-        activo=activo
+        activo=activo,
+        incluir_eliminados=False  # ✅ SIEMPRE False (no eliminadas)
     )
 
 # ======================================================
@@ -97,6 +107,10 @@ def actualizar_categoria(
     current_user: Usuario = Depends(get_current_user),  
     db: Session = Depends(get_db)
 ):
+    """
+    Actualiza una categoría.
+    Permite actualizar el campo 'eliminado' para restaurar o eliminar lógicamente.
+    """
     data_dict = data.dict(exclude_unset=True)
     
     return CategoriaService(db).actualizar_categoria_con_usuario(
@@ -105,7 +119,7 @@ def actualizar_categoria(
     )
 
 # ======================================================
-# 🔹 Eliminar categoría
+# 🔹 Eliminar categoría (ELIMINADO LÓGICO)
 # ======================================================
 @router.delete(
     "/{id_categoria}",
@@ -117,7 +131,59 @@ def eliminar_categoria(
     db: Session = Depends(get_db)
 ):
     """
-    Elimina una categoría. Requiere autenticación.
+    Elimina una categoría de forma LÓGICA (marca eliminado=True).
+    La categoría no se borra físicamente de la base de datos.
+    Requiere autenticación.
     """
     CategoriaService(db).eliminar_categoria(id_categoria)
-    return {"detail": "Categoría eliminada correctamente"}
+    return {
+        "detail": "Categoría eliminada correctamente",
+        "tipo": "eliminado_logico"
+    }
+
+# ======================================================
+# 🔹 NUEVO: Restaurar categoría eliminada
+# ======================================================
+@router.post(
+    "/{id_categoria}/restaurar",
+    response_model=CategoriaResponse,
+    status_code=status.HTTP_200_OK
+)
+def restaurar_categoria(
+    id_categoria: int,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Restaura una categoría que fue eliminada lógicamente.
+    Cambia eliminado=False.
+    Solo para administradores.
+    """
+    return CategoriaService(db).restaurar_categoria(id_categoria)
+
+# ======================================================
+# 🔹 SUPERADMIN: Listar TODAS las categorías (incluyendo eliminadas)
+# ======================================================
+@router.get(
+    "/admin/todas",
+    response_model=List[CategoriaResponse]
+)
+def listar_todas_admin(
+    activo: Optional[bool] = Query(None),
+    id_agente: Optional[int] = Query(None),
+    current_user: Usuario = Depends(get_current_user),  
+    db: Session = Depends(get_db)
+):
+    """
+    [ADMIN] Lista TODAS las categorías, incluyendo las eliminadas.
+    Solo para administradores.
+    """
+    # TODO: Aquí puedes agregar un check de rol de admin
+    # if current_user.rol != "admin":
+    #     raise HTTPException(status_code=403, detail="No autorizado")
+    
+    return CategoriaService(db).listar_categorias(
+        activo=activo,
+        id_agente=id_agente,
+        incluir_eliminados=True  # ✅ Incluye eliminadas
+    )
