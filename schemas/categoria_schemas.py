@@ -30,12 +30,14 @@ class CategoriaUpdate(BaseModel):
     color: Optional[str] = None
     orden: Optional[int] = None
     activo: Optional[bool] = None
-    eliminado: Optional[bool] = None  # ✅ NUEVO
-    
+    eliminado: Optional[bool] = None
+    id_agente: Optional[int] = None 
+
     @field_validator('id_categoria_padre')
     @classmethod
     def convert_zero_to_none(cls, v):
         return None if v == 0 else v
+
 
 class CategoriaResponse(CategoriaBase):
     id_categoria: int
