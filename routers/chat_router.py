@@ -6,6 +6,7 @@ from database.database import get_db
 from pydantic import BaseModel
 from ollama.ollama_agent_service import OllamaAgentService
 from services.escalamiento_service import EscalamientoService
+from services.conversation_service import ConversationService, ConversationCreate
 from models.agente_virtual import AgenteVirtual
 from utils.json_utils import safe_json_dumps
 from typing import Optional, Dict, Any
@@ -106,6 +107,60 @@ async def chat_with_agent_stream(
         heartbeat_interval = 15
         
         try:
+
+            # ============================================
+            # 🔥 PASO -1: ASEGURAR QUE EXISTE CONVERSACIÓN (ANTES DE TODO)
+            # ============================================
+            try:
+                # Obtener agente
+                agente = db.query(AgenteVirtual).filter(
+                    AgenteVirtual.id_agente == payload.agent_id
+                ).first()
+                
+                if not agente:
+                    yield {
+                        "type": "error",
+                        "content": f"Agente {payload.agent_id} no encontrado"
+                    }
+                    return
+                
+                # Verificar si ya existe conversación
+                conversation = await ConversationService.get_conversation_by_session(payload.session_id)
+                
+                if not conversation:
+                    logger.info(f"📝 Creando conversación para nueva sesión: {payload.session_id}")
+                    
+                    # Crear conversación
+                    conversation_data = ConversationCreate(
+                        session_id=payload.session_id,
+                        id_agente=payload.agent_id,
+                        agent_name=agente.nombre_agente,
+                        agent_type=agente.tipo_agente,
+                        id_visitante=None,  # Se asignará después
+                        origin=payload.origin,
+                        ip_origen=ip_origen,
+                        user_agent=user_agent
+                    )
+                    conversation = await ConversationService.create_conversation(conversation_data)
+                    logger.info(f"✅ Conversación creada: {conversation.id}")
+                else:
+                    logger.info(f"✅ Conversación existente encontrada: {conversation.id}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error asegurando conversación: {e}")
+                yield {
+                    "type": "error",
+                    "content": f"Error iniciando conversación: {str(e)}"
+                }
+                return
+        
+
+
+
+
+
+
+
             # ============================================
             # 🔥 PASO 0: VERIFICAR CONFIRMACIÓN PENDIENTE PRIMERO
             # ============================================
