@@ -106,18 +106,30 @@ class CategoriaRepository:
             self.db.rollback()
             raise DatabaseException(str(e))
     
-    # ✅ NUEVO: Método para restaurar categorías eliminadas
     def restore(self, id_categoria: int):
         """
-        Restaura una categoría eliminada (eliminado=False)
+        Restaura una categoría eliminada lógicamente.
+        Marca eliminado=False y activo=True para que vuelva a aparecer.
         """
         try:
+            # ✅ Obtener incluyendo eliminados (para poder restaurarla)
             cat = self.get_by_id(id_categoria, incluir_eliminados=True)
-            cat.eliminado = False
-            # No cambiar activo automáticamente, dejar como estaba
+            
+            # ✅ Validar que SÍ esté eliminada
+            if not cat.eliminado:
+                from exceptions.base import ValidationException
+                raise ValidationException(
+                    "La categoría no está eliminada, no se puede restaurar"
+                )
+            
+            # ✅ RESTAURACIÓN COMPLETA: Ambos campos en True
+            cat.eliminado = False  # Ya no está eliminada
+            cat.activo = True       # Vuelve a estar activa
+            
             self.db.commit()
             self.db.refresh(cat)
             return cat
+            
         except Exception as e:
             self.db.rollback()
             raise DatabaseException(str(e))
