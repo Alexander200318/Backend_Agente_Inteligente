@@ -295,7 +295,7 @@ async def login(
         # ✅ CORRECCIÓN: Quitar el filtro de estado
         roles_usuario = db.query(UsuarioRol).filter(
             UsuarioRol.id_usuario == usuario.id_usuario,
-            UsuarioRol.activo == 1  # ✅ Filtrar por activo = 1
+            UsuarioRol.activo == True 
         ).join(Rol).all()
 
         if not roles_usuario or len(roles_usuario) == 0:
@@ -886,18 +886,10 @@ async def eliminar_usuario(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """
-    🗑️ Eliminado lógico: Cambia el estado del usuario y persona a 'inactivo'
-    
-    - Marca el usuario como inactivo en lugar de eliminarlo físicamente
-    - También marca la persona asociada como inactiva
-    - No permite eliminar el propio usuario (auto-eliminación)
-    - Mantiene todos los registros en la base de datos
-    """
+    """🗑️ Eliminación lógica: Cambia estado='inactivo'"""
     client_ip = get_client_ip(request)
     
     try:
-        # 1. Buscar el usuario con su persona
         from sqlalchemy.orm import joinedload
         
         usuario = db.query(Usuario).options(
@@ -910,47 +902,35 @@ async def eliminar_usuario(
                 detail=f"Usuario con ID {id_usuario} no encontrado"
             )
         
-        # 2. Verificar si ya está inactivo
-        if usuario.estado == "inactivo":
+        if usuario.estado == "inactivo":  # ✅ USAR estado
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El usuario ya está inactivo"
             )
         
-        # 3. Guardar información para el log
-        nombre_completo = "Sin nombre"
-        if usuario.persona:
-            nombre_completo = f"{usuario.persona.nombre} {usuario.persona.apellido}"
-        
-        # 4. Cambiar estado del usuario a inactivo
+        # ✅ CAMBIAR estado = "inactivo"
         usuario.estado = "inactivo"
         usuario.fecha_actualizacion = datetime.now()
         
-        # 5. Cambiar estado de la persona asociada a inactivo
+        # ✅ CAMBIAR estado en persona
         if usuario.persona:
             usuario.persona.estado = "inactivo"
             usuario.persona.fecha_actualizacion = datetime.now()
         
-        # 6. Commit de la transacción
         db.commit()
         
-        # 7. Log de seguridad
         log_security_event(
             "USER_DELETED_LOGICAL",
             usuario.username,
-            f"Usuario eliminado lógicamente (inactivo) - Persona: {nombre_completo}",
+            "Usuario eliminado (estado=inactivo)",
             success=True,
             ip_address=client_ip
         )
         
         return {
-            "message": "Usuario eliminado correctamente (eliminado lógico)",
+            "message": "Usuario eliminado correctamente",
             "id_usuario": id_usuario,
-            "username": usuario.username,
-            "estado_anterior": "activo",
-            "estado_actual": "inactivo",
-            "persona_actualizada": True if usuario.persona else False,
-            "fecha_eliminacion": datetime.now().isoformat()
+            "estado": "inactivo"
         }
         
     except HTTPException:
@@ -958,40 +938,22 @@ async def eliminar_usuario(
         raise
     except Exception as e:
         db.rollback()
-        
-        log_security_event(
-            "USER_DELETE_ERROR",
-            f"ID:{id_usuario}",
-            f"Error al eliminar usuario: {str(e)}",
-            success=False,
-            ip_address=client_ip
-        )
-        
-        print(f"❌ Error eliminando usuario: {e}")
-        import traceback
-        traceback.print_exc()
-        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al eliminar usuario"
+            detail=f"Error al eliminar usuario: {str(e)}"
         )
-        
+
+
 @router.patch("/{id_usuario}/reactivar", status_code=status.HTTP_200_OK)
 async def reactivar_usuario(
     id_usuario: int,
     request: Request,
     db: Session = Depends(get_db)
 ):
-    """
-    🔄 Reactivar un usuario inactivo
-    
-    - Cambia el estado del usuario y persona de 'inactivo' a 'activo'
-    - Solo funciona con usuarios en estado inactivo
-    """
+    """🔄 Reactivar usuario: Cambia estado='activo'"""
     client_ip = get_client_ip(request)
     
     try:
-        # 1. Buscar el usuario con su persona
         from sqlalchemy.orm import joinedload
         
         usuario = db.query(Usuario).options(
@@ -1004,35 +966,30 @@ async def reactivar_usuario(
                 detail=f"Usuario con ID {id_usuario} no encontrado"
             )
         
-        # 2. Verificar que esté inactivo
-        if usuario.estado != "inactivo":
+        if usuario.estado == "activo":  # ✅ USAR estado
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"El usuario está en estado '{usuario.estado}', no puede ser reactivado"
+                detail="El usuario ya está activo"
             )
         
-        # 3. Cambiar estado a activo
+        # ✅ CAMBIAR estado = "activo"
         usuario.estado = "activo"
         usuario.fecha_actualizacion = datetime.now()
         
-        # 4. Cambiar estado de la persona a activo
+        # ✅ CAMBIAR estado en persona
         if usuario.persona:
             usuario.persona.estado = "activo"
             usuario.persona.fecha_actualizacion = datetime.now()
         
-        # 5. Resetear intentos fallidos por si acaso
         usuario.intentos_fallidos = 0
         usuario.fecha_bloqueo = None
-        usuario.fecha_ultimo_intento_fallido = None
         
-        # 6. Commit
         db.commit()
         
-        # 7. Log
         log_security_event(
             "USER_REACTIVATED",
             usuario.username,
-            "Usuario reactivado desde estado inactivo",
+            "Usuario reactivado (estado=activo)",
             success=True,
             ip_address=client_ip
         )
@@ -1040,9 +997,7 @@ async def reactivar_usuario(
         return {
             "message": f"Usuario '{usuario.username}' reactivado exitosamente",
             "id_usuario": id_usuario,
-            "estado_anterior": "inactivo",
-            "estado_actual": "activo",
-            "fecha_reactivacion": datetime.now().isoformat()
+            "estado": "activo"
         }
         
     except HTTPException:
@@ -1050,24 +1005,10 @@ async def reactivar_usuario(
         raise
     except Exception as e:
         db.rollback()
-        
-        log_security_event(
-            "USER_REACTIVATION_ERROR",
-            f"ID:{id_usuario}",
-            f"Error: {str(e)}",
-            success=False,
-            ip_address=client_ip
-        )
-        
-        print(f"❌ Error reactivando usuario: {e}")
-        import traceback
-        traceback.print_exc()
-        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al reactivar usuario"
+            detail=f"Error al reactivar usuario: {str(e)}"
         )
-        
 
 
 @router.post("/{id_usuario}/cambiar-password", status_code=status.HTTP_200_OK)
@@ -1300,7 +1241,7 @@ async def desbloquear_usuario(
         )
     
 
- # _________________________________________________________________________________
+# _________________________________________________________________________________
 
 @router.get("/completo", status_code=status.HTTP_200_OK)
 async def listar_usuarios_completo(
@@ -1341,9 +1282,8 @@ async def listar_usuarios_completo(
             Departamento, Persona.id_departamento == Departamento.id_departamento
         )
         
-        # Aplicar filtros
-        if estado:
-            query = query.filter(Usuario.estado == estado)
+                # ✅ FILTRAR solo usuarios activos
+        query = query.filter(Usuario.estado == "activo")
         
         if id_departamento:
             query = query.filter(Persona.id_departamento == id_departamento)

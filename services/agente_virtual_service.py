@@ -57,7 +57,7 @@ class AgenteVirtualService:
             self.db.query(UnidadContenido)
             .filter(
                 UnidadContenido.id_agente == id_agente,
-                UnidadContenido.eliminado == False  # ✅ Solo contenidos activos
+                UnidadContenido.eliminado == False 
             )
             .count()
         )
