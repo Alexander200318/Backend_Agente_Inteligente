@@ -39,11 +39,20 @@ class UsuarioAgenteRepository:
             raise NotFoundException("Asignación", id_usuario_agente)
         return asignacion
     
-    def get_by_usuario_agente(self, id_usuario: int, id_agente: int):
-        return self.db.query(UsuarioAgente).filter(
+    def get_by_usuario_agente(self, id_usuario: int, id_agente: int, solo_activos: bool = False):
+        """
+        Obtiene la asignación por usuario y agente.
+        Si solo_activos=True, solo retorna si está activo.
+        """
+        query = self.db.query(UsuarioAgente).filter(
             UsuarioAgente.id_usuario == id_usuario,
             UsuarioAgente.id_agente == id_agente
-        ).first()
+        )
+        
+        if solo_activos:
+            query = query.filter(UsuarioAgente.activo == True)
+        
+        return query.first()
     
     def get_by_usuario(self, id_usuario: int, activo: Optional[bool] = None) -> List[UsuarioAgente]:
         query = self.db.query(UsuarioAgente).filter(UsuarioAgente.id_usuario == id_usuario)
@@ -70,6 +79,7 @@ class UsuarioAgenteRepository:
             raise DatabaseException(str(e))
     
     def delete(self, id_usuario_agente: int) -> dict:
+        """Desactiva la asignación (soft delete)"""
         asignacion = self.get_by_id(id_usuario_agente)
         try:
             asignacion.activo = False
@@ -79,19 +89,44 @@ class UsuarioAgenteRepository:
             self.db.rollback()
             raise DatabaseException(str(e))
     
-    # ✅ ESTE MÉTODO ES EL QUE FALTA
+    def delete_permanently(self, id_usuario: int, id_agente: int) -> dict:
+        """
+        Elimina PERMANENTEMENTE el registro de usuario_agente de la base de datos.
+        """
+        try:
+            # Buscar SIN filtro de activo (para poder eliminar incluso si está inactivo)
+            asignacion = self.get_by_usuario_agente(id_usuario, id_agente, solo_activos=False)
+            
+            if not asignacion:
+                raise NotFoundException(
+                    "Asignación", 
+                    f"usuario {id_usuario} - agente {id_agente}"
+                )
+            
+            # Eliminar físicamente
+            self.db.delete(asignacion)
+            self.db.commit()
+            
+            return {
+                "message": "Asignación eliminada permanentemente",
+                "id_usuario": id_usuario,
+                "id_agente": id_agente,
+                "id_usuario_agente": asignacion.id_usuario_agente
+            }
+        except NotFoundException:
+            # Re-lanzar NotFoundException sin rollback
+            raise
+        except SQLAlchemyError as e:
+            self.db.rollback()
+            raise DatabaseException(str(e))
+    
     def get_permisos_usuario_agente(self, id_usuario: int, id_agente: int) -> Optional[UsuarioAgente]:
         """
-        Obtiene los permisos activos de un usuario sobre un agente específico.
+        Obtiene los permisos ACTIVOS de un usuario sobre un agente específico.
         Retorna None si no existe asignación o está inactiva.
         """
-        return self.db.query(UsuarioAgente).filter(
-            UsuarioAgente.id_usuario == id_usuario,
-            UsuarioAgente.id_agente == id_agente,
-            UsuarioAgente.activo == True
-        ).first()
+        return self.get_by_usuario_agente(id_usuario, id_agente, solo_activos=True)
     
-    # Verificar si un usuario tiene un permiso específico
     def tiene_permiso(self, id_usuario: int, id_agente: int, permiso: str) -> bool:
         """
         Verifica si un usuario tiene un permiso específico sobre un agente.

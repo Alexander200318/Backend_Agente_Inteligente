@@ -139,3 +139,28 @@ def actualizar_permisos_usuario_agente(
         )
     
     return asignacion_actualizada
+
+
+# ✅ NUEVO: Eliminar permanentemente una asignación
+@router.delete("/usuario/{id_usuario}/agente/{id_agente}", status_code=status.HTTP_200_OK)
+def eliminar_asignacion_usuario_agente(
+    id_usuario: int,
+    id_agente: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Elimina PERMANENTEMENTE la asignación de un usuario a un agente.
+    Esta acción borra el registro de la base de datos y NO se puede deshacer.
+    
+    Diferencia con revocar_acceso:
+    - revocar_acceso: Desactiva (activo=False) pero mantiene el registro
+    - eliminar: Borra completamente el registro de la base de datos
+    """
+    service = UsuarioAgenteService(db)
+    resultado = service.eliminar_asignacion(id_usuario, id_agente)
+    
+    return {
+        "success": True,
+        "message": f"Asignación eliminada: Usuario {id_usuario} - Agente {id_agente}",
+        "data": resultado
+    }

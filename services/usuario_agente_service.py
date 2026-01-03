@@ -30,7 +30,16 @@ class UsuarioAgenteService:
         return self.repo.update(id_usuario_agente, data)
     
     def revocar_acceso(self, id_usuario_agente: int):
+        """Desactiva el acceso (soft delete)"""
         return self.repo.delete(id_usuario_agente)
+    
+    # ✅ NUEVO: Eliminación permanente
+    def eliminar_asignacion(self, id_usuario: int, id_agente: int):
+        """
+        Elimina permanentemente la asignación de un usuario a un agente.
+        Esta acción NO se puede deshacer.
+        """
+        return self.repo.delete_permanently(id_usuario, id_agente)
     
     def verificar_permisos(self, id_usuario: int, id_agente: int):
         """
@@ -50,7 +59,6 @@ class UsuarioAgenteService:
         asignaciones = self.repo.get_by_usuario(id_usuario, activo=True)
         return [asig.id_agente for asig in asignaciones if asig.puede_ver_contenido]
     
-    # ✅ AGREGAR ESTOS DOS MÉTODOS AQUÍ:
     def obtener_por_usuario_agente(self, id_usuario: int, id_agente: int):
         """
         Obtiene la asignación de un usuario a un agente específico.
