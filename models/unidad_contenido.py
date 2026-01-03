@@ -16,6 +16,7 @@ class UnidadContenido(Base):
     __table_args__ = (
         Index('idx_agente_estado_prioridad', 'id_agente', 'estado', 'prioridad'),
         Index('idx_fulltext', 'titulo', 'contenido', 'resumen', mysql_prefix='FULLTEXT'),
+        Index('idx_eliminado', 'eliminado'),  # 🔥 NUEVO: Índice para soft delete
     )
 
     # Primary Key
@@ -67,6 +68,15 @@ class UnidadContenido(Base):
     # Estado del contenido
     estado = Column(Enum(EstadoContenidoEnum), default=EstadoContenidoEnum.borrador, index=True)
     
+    # 🔥 SOFT DELETE - Campos nuevos
+    eliminado = Column(Boolean, default=False, nullable=False, index=True, 
+        comment='Indica si el contenido fue eliminado lógicamente')
+    fecha_eliminacion = Column(DateTime, nullable=True, 
+        comment='Fecha y hora de eliminación')
+    eliminado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'), 
+        nullable=True, 
+        comment='Usuario que eliminó el contenido')
+    
     # Auditoría
     fecha_creacion = Column(DateTime, server_default=func.current_timestamp())
     fecha_actualizacion = Column(DateTime, onupdate=func.current_timestamp())
@@ -89,7 +99,8 @@ class UnidadContenido(Base):
     actualizador = relationship("Usuario", foreign_keys=[actualizado_por])
     revisor = relationship("Usuario", foreign_keys=[revisado_por])
     publicador = relationship("Usuario", foreign_keys=[publicado_por])
+    eliminador = relationship("Usuario", foreign_keys=[eliminado_por])  # 🔥 NUEVO
     metricas = relationship("MetricaContenido", back_populates="contenido", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<UnidadContenido(id={self.id_contenido}, titulo='{self.titulo}', estado='{self.estado}')>"
+        return f"<UnidadContenido(id={self.id_contenido}, titulo='{self.titulo}', estado='{self.estado}', eliminado={self.eliminado})>"

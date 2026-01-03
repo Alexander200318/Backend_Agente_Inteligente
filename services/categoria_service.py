@@ -141,7 +141,7 @@ class CategoriaService:
         return categoria
 
     # ============================================
-    # 🔹 Eliminar categoría (ELIMINADO LÓGICO)
+    # 🔹 Eliminar categoría (ELIMINADO LÓGICO) - VERSIÓN MEJORADA
     # ============================================
     def eliminar_categoria(self, id_categoria: int):
         """
@@ -149,31 +149,38 @@ class CategoriaService:
         Valida que NO tenga contenidos ni subcategorías activas.
         """
 
-        # 🔥 Verificar si tiene contenido asociado NO eliminado
-        contenidos_count = (
+        # 🔥 CRÍTICO: Verificar contenidos ACTIVOS (no eliminados)
+        contenidos_activos = (
             self.db.query(UnidadContenido)
-            .filter(UnidadContenido.id_categoria == id_categoria)
+            .filter(
+                UnidadContenido.id_categoria == id_categoria,
+                UnidadContenido.eliminado == False  # 👈 DEBE ESTAR ESTO
+            )
             .count()
         )
 
-        if contenidos_count > 0:
+        if contenidos_activos > 0:
             raise ValidationException(
-                f"No se puede eliminar la categoría porque tiene {contenidos_count} contenido(s) asociado(s)"
+                f"No se puede eliminar la categoría porque tiene {contenidos_activos} "
+                f"contenido(s) activo(s) asociado(s). Primero debes eliminar o mover los contenidos."
             )
 
-        # 🔥 Verificar si tiene subcategorías NO eliminadas
-        subcategorias_count = (
+
+        # 🔥 CRÍTICO: Verificar subcategorías ACTIVAS (no eliminadas)
+        subcategorias_activas = (
             self.db.query(Categoria)
             .filter(
                 Categoria.id_categoria_padre == id_categoria,
-                Categoria.eliminado == False  # ✅ Solo contar NO eliminadas
+                Categoria.eliminado == False  # ✅ SOLO subcategorías NO eliminadas
             )
             .count()
         )
 
-        if subcategorias_count > 0:
+        if subcategorias_activas > 0:
+            # ✅ Mensaje más claro
             raise ValidationException(
-                f"No se puede eliminar la categoría porque tiene {subcategorias_count} subcategoría(s) activa(s)"
+                f"No se puede eliminar la categoría porque tiene {subcategorias_activas} "
+                f"subcategoría(s) activa(s) asociada(s). Primero debes eliminar o mover las subcategorías."
             )
 
         # ✅ ELIMINADO LÓGICO: usar método del repositorio
@@ -187,3 +194,64 @@ class CategoriaService:
         Restaura una categoría que fue eliminada lógicamente.
         """
         return self.repo.restore(id_categoria)
+    
+    # ============================================
+    # 🔹 NUEVO: Obtener estadísticas de una categoría
+    # ============================================
+    def obtener_estadisticas_categoria(self, id_categoria: int) -> dict:
+        """
+        Obtiene estadísticas completas de una categoría:
+        - Contenidos activos
+        - Contenidos eliminados
+        - Subcategorías activas
+        - Subcategorías eliminadas
+        """
+        contenidos_activos = (
+            self.db.query(UnidadContenido)
+            .filter(
+                UnidadContenido.id_categoria == id_categoria,
+                UnidadContenido.eliminado == False
+            )
+            .count()
+        )
+        
+        contenidos_eliminados = (
+            self.db.query(UnidadContenido)
+            .filter(
+                UnidadContenido.id_categoria == id_categoria,
+                UnidadContenido.eliminado == True
+            )
+            .count()
+        )
+        
+        subcategorias_activas = (
+            self.db.query(Categoria)
+            .filter(
+                Categoria.id_categoria_padre == id_categoria,
+                Categoria.eliminado == False
+            )
+            .count()
+        )
+        
+        subcategorias_eliminadas = (
+            self.db.query(Categoria)
+            .filter(
+                Categoria.id_categoria_padre == id_categoria,
+                Categoria.eliminado == True
+            )
+            .count()
+        )
+        
+        return {
+            "contenidos": {
+                "activos": contenidos_activos,
+                "eliminados": contenidos_eliminados,
+                "total": contenidos_activos + contenidos_eliminados
+            },
+            "subcategorias": {
+                "activas": subcategorias_activas,
+                "eliminadas": subcategorias_eliminadas,
+                "total": subcategorias_activas + subcategorias_eliminadas
+            },
+            "puede_eliminarse": contenidos_activos == 0 and subcategorias_activas == 0
+        }

@@ -50,12 +50,21 @@ class AgenteVirtualService:
         return self.repo.update(id_agente, agente_data, actualizado_por_id)
     
     def eliminar_agente(self, id_agente: int) -> dict:
-        # Validación: verificar si tiene contenidos activos
-        stats = self.repo.get_estadisticas(id_agente)
+        # 🔥 NUEVO: Validar solo contenidos NO eliminados
+        from models.unidad_contenido import UnidadContenido
         
-        if stats['total_contenidos'] > 0:
+        contenidos_activos = (
+            self.db.query(UnidadContenido)
+            .filter(
+                UnidadContenido.id_agente == id_agente,
+                UnidadContenido.eliminado == False  # ✅ Solo contenidos activos
+            )
+            .count()
+        )
+        
+        if contenidos_activos > 0:
             raise ValidationException(
-                f"No se puede desactivar el agente porque tiene {stats['total_contenidos']} contenido(s). "
+                f"No se puede eliminar el agente porque tiene {contenidos_activos} contenido(s) activo(s). "
                 "Elimine o archive los contenidos primero."
             )
         

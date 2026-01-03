@@ -11,7 +11,7 @@ from repositories.unidad_contenido_repo import (
 )
 from rag.rag_service import RAGService
 from models.usuario import Usuario
-from models.categoria import Categoria  # ✅ Importar al inicio
+from models.categoria import Categoria
 
 class UnidadContenidoService:
     def __init__(self, db: Session):
@@ -47,30 +47,22 @@ class UnidadContenidoService:
                 print(f"⚠️ Categoría {contenido.id_categoria} no encontrada para indexar")
         except Exception as e:
             print(f"⚠️ Error al indexar en RAG: {str(e)}")
-            # No fallar la operación principal si RAG falla
 
     def crear_contenido(self, data: UnidadContenidoCreate, creado_por: Optional[int] = None):
         """Crea un nuevo contenido e indexa en RAG"""
-        # Validaciones
         if len(data.contenido) < 50:
             raise ValidationException("El contenido debe tener al menos 50 caracteres")
         
         self._validar_fechas_vigencia(data.fecha_vigencia_inicio, data.fecha_vigencia_fin)
-        
-        # Validar usuario
         creado_por = self._validar_usuario(creado_por)
-        
-        # Crear contenido
         contenido = self.repo.create(data, creado_por)
-        
-        # Indexar en RAG (no falla si hay error)
         self._indexar_en_rag(contenido)
         
         return contenido
     
-    def obtener_por_id(self, id_contenido: int):
+    def obtener_por_id(self, id_contenido: int, include_deleted: bool = False):
         """Obtiene un contenido por ID"""
-        contenido = self.repo.get_by_id(id_contenido)
+        contenido = self.repo.get_by_id(id_contenido, include_deleted)
         if not contenido:
             raise NotFoundException(f"Contenido {id_contenido} no encontrado")
         return contenido
@@ -80,10 +72,11 @@ class UnidadContenidoService:
         id_agente: int, 
         estado: Optional[str] = None, 
         skip: int = 0, 
-        limit: int = 100
+        limit: int = 100,
+        include_deleted: bool = False
     ):
         """Lista contenidos de un agente con filtros"""
-        return self.repo.get_by_agente(id_agente, estado, skip, limit)
+        return self.repo.get_by_agente(id_agente, estado, skip, limit, include_deleted)
     
     def listar_todos(
         self,
@@ -92,7 +85,8 @@ class UnidadContenidoService:
         estado: Optional[str] = None,
         id_agente: Optional[int] = None,
         id_categoria: Optional[int] = None,
-        id_departamento: Optional[int] = None
+        id_departamento: Optional[int] = None,
+        include_deleted: bool = False
     ):
         """Lista todos los contenidos con filtros opcionales"""
         return self.repo.get_all(
@@ -101,7 +95,8 @@ class UnidadContenidoService:
             estado=estado,
             id_agente=id_agente,
             id_categoria=id_categoria,
-            id_departamento=id_departamento
+            id_departamento=id_departamento,
+            include_deleted=include_deleted
         )
     
     def actualizar_contenido(
@@ -110,25 +105,18 @@ class UnidadContenidoService:
         data: UnidadContenidoUpdate, 
         actualizado_por: Optional[int] = None
     ):
-        """Actualiza un contenido y reindexÃ¡ en RAG"""
-        # Validar fechas si se están actualizando
+        """Actualiza un contenido y reindexa en RAG"""
         if data.fecha_vigencia_inicio or data.fecha_vigencia_fin:
             contenido_actual = self.obtener_por_id(id_contenido)
             inicio = data.fecha_vigencia_inicio or contenido_actual.fecha_vigencia_inicio
             fin = data.fecha_vigencia_fin or contenido_actual.fecha_vigencia_fin
             self._validar_fechas_vigencia(inicio, fin)
         
-        # Validar contenido mínimo si se está actualizando
         if data.contenido and len(data.contenido) < 50:
             raise ValidationException("El contenido debe tener al menos 50 caracteres")
         
-        # Validar usuario
         actualizado_por = self._validar_usuario(actualizado_por)
-        
-        # Actualizar contenido
         contenido = self.repo.update(id_contenido, data, actualizado_por)
-        
-        # Reindexar en RAG
         self._indexar_en_rag(contenido)
         
         return contenido
@@ -150,34 +138,51 @@ class UnidadContenidoService:
             raise ValidationException(f"Estado '{nuevo_estado}' no válido")
         
         actualizado_por = self._validar_usuario(actualizado_por)
-        
         data = UnidadContenidoUpdate(estado=nuevo_estado)
         return self.repo.update(id_contenido, data, actualizado_por)
 
-    def eliminar_contenido(self, id_contenido: int) -> dict:
-        """Elimina contenido de BD y ChromaDB"""
+    def eliminar_contenido(
+        self, 
+        id_contenido: int,
+        eliminado_por: Optional[int] = None,
+        hard_delete: bool = False
+    ) -> dict:
+        """
+        Elimina contenido (soft delete por defecto, hard delete opcional)
+        
+        Args:
+            id_contenido: ID del contenido a eliminar
+            eliminado_por: Usuario que elimina
+            hard_delete: Si True, elimina físicamente. Si False, soft delete
+        """
         # 1. Obtener el contenido antes de eliminar
         contenido = self.obtener_por_id(id_contenido)
         id_agente = contenido.id_agente
         
-        # 2. Eliminar de ChromaDB primero
-        try:
-            rag_result = self.rag.delete_unidad(id_contenido, id_agente)
-            rag_deleted = rag_result.get("ok", False)
-        except Exception as e:
-            print(f"⚠️ Error al eliminar de ChromaDB: {str(e)}")
-            rag_deleted = False
+        # 2. Si es hard delete, eliminar de ChromaDB
+        if hard_delete:
+            try:
+                rag_result = self.rag.delete_unidad(id_contenido, id_agente)
+                rag_deleted = rag_result.get("ok", False)
+            except Exception as e:
+                print(f"⚠️ Error al eliminar de ChromaDB: {str(e)}")
+                rag_deleted = False
+        else:
+            rag_deleted = None
         
         # 3. Eliminar de la base de datos
-        db_result = self.repo.delete(id_contenido)
+        eliminado_por = self._validar_usuario(eliminado_por)
+        db_result = self.repo.delete(id_contenido, eliminado_por, hard_delete)
         
         return {
             "ok": True,
             "id_contenido": id_contenido,
+            "tipo_eliminacion": "fisica" if hard_delete else "logica",
             "deleted_from_chromadb": rag_deleted,
             "deleted_from_database": db_result
         }
     
+    # 🔥 ESTOS MÉTODOS DEBEN ESTAR AL MISMO NIVEL (SIN INDENTACIÓN EXTRA)
     def buscar_contenidos(self, termino: str, id_agente: Optional[int] = None):
         """Busca contenidos por término"""
         return self.repo.search(termino, id_agente)
@@ -185,3 +190,7 @@ class UnidadContenidoService:
     def obtener_estadisticas(self, id_agente: Optional[int] = None):
         """Obtiene estadísticas de contenidos"""
         return self.repo.get_statistics(id_agente)
+    
+    def restaurar_contenido(self, id_contenido: int):
+        """Restaura un contenido eliminado lógicamente"""
+        return self.repo.restore(id_contenido)
