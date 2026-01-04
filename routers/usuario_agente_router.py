@@ -141,7 +141,7 @@ def actualizar_permisos_usuario_agente(
     return asignacion_actualizada
 
 
-# ✅ NUEVO: Eliminar permanentemente una asignación
+# Eliminar permanentemente una asignación
 @router.delete("/usuario/{id_usuario}/agente/{id_agente}", status_code=status.HTTP_200_OK)
 def eliminar_asignacion_usuario_agente(
     id_usuario: int,
