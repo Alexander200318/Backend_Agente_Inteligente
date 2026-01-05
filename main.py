@@ -21,6 +21,9 @@ from core.config import settings
 from database.init_db import init_db
 from exceptions.base import BaseAPIException
 
+# 🔥 AGREGAR ESTE IMPORT
+from tasks.vigencia_cron import iniciar_scheduler
+
 # ==================== LIFESPAN ====================
 
 @asynccontextmanager
@@ -78,15 +81,15 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     print("✅ Scheduler iniciado - Auto-finalización de conversaciones cada 10 minutos")
 
+    # 🔥 AGREGAR AQUÍ el scheduler de vigencias
+    scheduler_vigencias = iniciar_scheduler()
+    app.state.scheduler_vigencias = scheduler_vigencias
+    print("✅ Scheduler de vigencias iniciado")
+
     # Guardar scheduler en app state
     app.state.scheduler = scheduler
-    # ↑↑↑ HASTA AQUÍ
 
     yield
-  
-
-    
-
     
     # ==================== SHUTDOWN ====================
     print("👋 Cerrando aplicación...")
@@ -95,6 +98,11 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, 'scheduler'):
         app.state.scheduler.shutdown()
         print("✅ Scheduler detenido")
+    
+    # 🔥 NUEVO: Detener scheduler de vigencias
+    if hasattr(app.state, 'scheduler_vigencias'):
+        app.state.scheduler_vigencias.shutdown()
+        print("✅ Scheduler de vigencias detenido")
     
     # 🔥 NUEVO: Cerrar MongoDB
     from database.mongodb import close_mongodb
@@ -175,6 +183,7 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(self), camera=(self)"
     
     return response
+
 
 # ==================== EXCEPTION HANDLERS ====================
 
@@ -418,6 +427,3 @@ async def check_user_dev(username: str, db: Session = Depends(get_db)):
             for r in roles
         ]
     }
-
-
-

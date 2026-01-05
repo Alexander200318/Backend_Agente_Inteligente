@@ -1,5 +1,3 @@
-# app/services/unidad_contenido_service.py
-
 from exceptions.base import ValidationException, NotFoundException
 from typing import Optional, List
 from datetime import date
@@ -20,22 +18,18 @@ class UnidadContenidoService:
         self.rag = RAGService(db)
 
     def _validar_usuario(self, id_usuario: Optional[int]) -> Optional[int]:
-        """Valida si el usuario existe, retorna None si no existe"""
         if id_usuario is None:
             return None
-        
         usuario = self.db.query(Usuario).filter(Usuario.id_usuario == id_usuario).first()
         return id_usuario if usuario else None
 
     def _validar_fechas_vigencia(self, fecha_inicio: Optional[date], fecha_fin: Optional[date]):
-        """Valida que las fechas de vigencia sean coherentes"""
         if fecha_inicio and fecha_fin and fecha_fin < fecha_inicio:
             raise ValidationException(
                 "La fecha de fin de vigencia no puede ser anterior a la fecha de inicio"
             )
 
     def _indexar_en_rag(self, contenido):
-        """Indexa el contenido en RAG de forma segura"""
         try:
             categoria = self.db.query(Categoria).filter(
                 Categoria.id_categoria == contenido.id_categoria
@@ -49,7 +43,6 @@ class UnidadContenidoService:
             print(f"⚠️ Error al indexar en RAG: {str(e)}")
 
     def crear_contenido(self, data: UnidadContenidoCreate, creado_por: Optional[int] = None):
-        """Crea un nuevo contenido e indexa en RAG"""
         if len(data.contenido) < 50:
             raise ValidationException("El contenido debe tener al menos 50 caracteres")
         
@@ -57,11 +50,9 @@ class UnidadContenidoService:
         creado_por = self._validar_usuario(creado_por)
         contenido = self.repo.create(data, creado_por)
         self._indexar_en_rag(contenido)
-        
         return contenido
     
     def obtener_por_id(self, id_contenido: int, include_deleted: bool = False):
-        """Obtiene un contenido por ID"""
         contenido = self.repo.get_by_id(id_contenido, include_deleted)
         if not contenido:
             raise NotFoundException(f"Contenido {id_contenido} no encontrado")
@@ -75,7 +66,6 @@ class UnidadContenidoService:
         limit: int = 100,
         include_deleted: bool = False
     ):
-        """Lista contenidos de un agente con filtros"""
         return self.repo.get_by_agente(id_agente, estado, skip, limit, include_deleted)
     
     def listar_todos(
@@ -88,7 +78,6 @@ class UnidadContenidoService:
         id_departamento: Optional[int] = None,
         include_deleted: bool = False
     ):
-        """Lista todos los contenidos con filtros opcionales"""
         return self.repo.get_all(
             skip=skip,
             limit=limit,
@@ -105,7 +94,6 @@ class UnidadContenidoService:
         data: UnidadContenidoUpdate, 
         actualizado_por: Optional[int] = None
     ):
-        """Actualiza un contenido y reindexa en RAG"""
         if data.fecha_vigencia_inicio or data.fecha_vigencia_fin:
             contenido_actual = self.obtener_por_id(id_contenido)
             inicio = data.fecha_vigencia_inicio or contenido_actual.fecha_vigencia_inicio
@@ -118,11 +106,9 @@ class UnidadContenidoService:
         actualizado_por = self._validar_usuario(actualizado_por)
         contenido = self.repo.update(id_contenido, data, actualizado_por)
         self._indexar_en_rag(contenido)
-        
         return contenido
     
     def publicar_contenido(self, id_contenido: int, publicado_por: Optional[int] = None):
-        """Publica un contenido (cambia estado a 'activo')"""
         publicado_por = self._validar_usuario(publicado_por)
         return self.repo.publicar(id_contenido, publicado_por)
     
@@ -132,7 +118,6 @@ class UnidadContenidoService:
         nuevo_estado: str, 
         actualizado_por: Optional[int] = None
     ):
-        """Cambia el estado de un contenido"""
         estados_validos = ["borrador", "revision", "activo", "inactivo", "archivado"]
         if nuevo_estado not in estados_validos:
             raise ValidationException(f"Estado '{nuevo_estado}' no válido")
@@ -147,19 +132,9 @@ class UnidadContenidoService:
         eliminado_por: Optional[int] = None,
         hard_delete: bool = False
     ) -> dict:
-        """
-        Elimina contenido (soft delete por defecto, hard delete opcional)
-        
-        Args:
-            id_contenido: ID del contenido a eliminar
-            eliminado_por: Usuario que elimina
-            hard_delete: Si True, elimina físicamente. Si False, soft delete
-        """
-        # 1. Obtener el contenido antes de eliminar
         contenido = self.obtener_por_id(id_contenido)
         id_agente = contenido.id_agente
         
-        # 2. Si es hard delete, eliminar de ChromaDB
         if hard_delete:
             try:
                 rag_result = self.rag.delete_unidad(id_contenido, id_agente)
@@ -170,7 +145,6 @@ class UnidadContenidoService:
         else:
             rag_deleted = None
         
-        # 3. Eliminar de la base de datos
         eliminado_por = self._validar_usuario(eliminado_por)
         db_result = self.repo.delete(id_contenido, eliminado_por, hard_delete)
         
@@ -182,15 +156,18 @@ class UnidadContenidoService:
             "deleted_from_database": db_result
         }
     
-    # 🔥 ESTOS MÉTODOS DEBEN ESTAR AL MISMO NIVEL (SIN INDENTACIÓN EXTRA)
     def buscar_contenidos(self, termino: str, id_agente: Optional[int] = None):
-        """Busca contenidos por término"""
         return self.repo.search(termino, id_agente)
     
     def obtener_estadisticas(self, id_agente: Optional[int] = None):
-        """Obtiene estadísticas de contenidos"""
         return self.repo.get_statistics(id_agente)
     
     def restaurar_contenido(self, id_contenido: int):
-        """Restaura un contenido eliminado lógicamente"""
         return self.repo.restore(id_contenido)
+    
+    # 🔥 NUEVO MÉTODO
+    def actualizar_vigencias_masivo(self, id_agente: Optional[int] = None):
+        """
+        Actualiza el estado de todos los contenidos según sus fechas de vigencia
+        """
+        return self.repo.actualizar_vigencias_masivo(id_agente)

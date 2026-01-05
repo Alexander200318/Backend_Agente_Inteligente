@@ -263,3 +263,25 @@ def vaciar_papelera(
         "eliminados_permanentemente": eliminados,
         "errores": errores
     }
+
+@router.post("/vigencia/actualizar-todos")
+def actualizar_vigencias_masivo(
+    id_agente: Optional[int] = Query(None, description="Si se especifica, solo actualiza ese agente"),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """
+    🔥 Actualiza el estado de todos los contenidos según sus fechas de vigencia
+    
+    Lógica automática:
+    - Antes de fecha_vigencia_inicio → inactivo
+    - Entre fecha_vigencia_inicio y fecha_vigencia_fin → activo
+    - Después de fecha_vigencia_fin → inactivo
+    """
+    service = UnidadContenidoService(db)
+    
+    try:
+        resultado = service.actualizar_vigencias_masivo(id_agente=id_agente)
+        return resultado
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
