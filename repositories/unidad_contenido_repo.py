@@ -137,7 +137,7 @@ class UnidadContenidoRepository:
                 cont.eliminado = True
                 cont.fecha_eliminacion = datetime.now()
                 cont.eliminado_por = eliminado_por
-                cont.estado = "archivado"
+                cont.estado = "inactivo"
             
             self.db.commit()
             return True
@@ -155,7 +155,7 @@ class UnidadContenidoRepository:
             cont.eliminado = False
             cont.fecha_eliminacion = None
             cont.eliminado_por = None
-            cont.estado = "borrador"
+            cont.estado = "inactivo"
             
             # 🔥 NUEVO: Aplicar vigencia automática al restaurar
             self._aplicar_vigencia_automatica(cont)
