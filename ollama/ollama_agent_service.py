@@ -73,7 +73,8 @@ class OllamaAgentService:
                 user_agent=user_agent,
                 dispositivo=dispositivo,
                 navegador=navegador,
-                sistema_operativo=sistema_operativo
+                sistema_operativo=sistema_operativo,
+                canal_acceso=origin
             )
             logger.info(f"✅ Visitante ID: {visitante.id_visitante}")
             
@@ -267,7 +268,8 @@ class OllamaAgentService:
                     user_agent=user_agent,
                     dispositivo=dispositivo,
                     navegador=navegador,
-                    sistema_operativo=sistema_operativo
+                    sistema_operativo=sistema_operativo,
+                    canal_acceso=origin
                 )
                 logger.info(f"✅ Visitante ID: {visitante.id_visitante}")
             except Exception as e:

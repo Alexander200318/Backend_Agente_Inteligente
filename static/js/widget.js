@@ -276,7 +276,8 @@ function getClientInfo() {
             width: window.screen.width,
             height: window.screen.height
         },
-        idioma: navigator.language || navigator.userLanguage
+        idioma: navigator.language || navigator.userLanguage,
+        canal_acceso: 'widget'  // 🔥 NUEVO
     };
 }
 

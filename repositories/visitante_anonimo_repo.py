@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy import func
+from sqlalchemy import func, and_
 from typing import Optional, List
 from datetime import datetime, timedelta
 from models.visitante_anonimo import VisitanteAnonimo
@@ -55,7 +55,9 @@ class VisitanteAnonimoRepository:
         limit: int = 100,
         dispositivo: Optional[str] = None,
         pais: Optional[str] = None,
-        fecha_desde: Optional[datetime] = None
+        fecha_desde: Optional[datetime] = None,
+        canal_acceso: Optional[str] = None,  # 🔥 NUEVO
+        pertenece_instituto: Optional[bool] = None  # 🔥 NUEVO
     ) -> List[VisitanteAnonimo]:
         query = self.db.query(VisitanteAnonimo)
         
@@ -65,8 +67,26 @@ class VisitanteAnonimoRepository:
             query = query.filter(VisitanteAnonimo.pais == pais)
         if fecha_desde:
             query = query.filter(VisitanteAnonimo.primera_visita >= fecha_desde)
+        if canal_acceso:  # 🔥 NUEVO
+            query = query.filter(VisitanteAnonimo.canal_acceso == canal_acceso)
+        if pertenece_instituto is not None:  # 🔥 NUEVO
+            query = query.filter(VisitanteAnonimo.pertenece_instituto == pertenece_instituto)
         
         return query.order_by(VisitanteAnonimo.primera_visita.desc()).offset(skip).limit(limit).all()
+    
+    # 🔥 NUEVO - Listar por canal
+    def get_by_canal(self, canal_acceso: str, skip: int = 0, limit: int = 100) -> List[VisitanteAnonimo]:
+        """Obtener visitantes por canal de acceso"""
+        return self.db.query(VisitanteAnonimo).filter(
+            VisitanteAnonimo.canal_acceso == canal_acceso
+        ).order_by(VisitanteAnonimo.primera_visita.desc()).offset(skip).limit(limit).all()
+    
+    # 🔥 NUEVO - Listar miembros del instituto
+    def get_miembros_instituto(self, skip: int = 0, limit: int = 100) -> List[VisitanteAnonimo]:
+        """Obtener visitantes que pertenecen al instituto"""
+        return self.db.query(VisitanteAnonimo).filter(
+            VisitanteAnonimo.pertenece_instituto == True
+        ).order_by(VisitanteAnonimo.primera_visita.desc()).offset(skip).limit(limit).all()
     
     def update(self, id_visitante: int, visitante_data: VisitanteAnonimoUpdate) -> VisitanteAnonimo:
         try:
@@ -81,6 +101,57 @@ class VisitanteAnonimoRepository:
         except SQLAlchemyError as e:
             self.db.rollback()
             raise DatabaseException(f"Error al actualizar visitante: {str(e)}")
+    
+    # 🔥 NUEVO - Actualizar solo satisfacción
+    def actualizar_satisfaccion(self, id_visitante: int, satisfaccion: int) -> VisitanteAnonimo:
+        """Actualizar satisfacción estimada (1-5)"""
+        try:
+            if satisfaccion < 1 or satisfaccion > 5:
+                raise ValueError("La satisfacción debe estar entre 1 y 5")
+            
+            visitante = self.get_by_id(id_visitante)
+            visitante.satisfaccion_estimada = satisfaccion
+            self.db.commit()
+            self.db.refresh(visitante)
+            return visitante
+        except SQLAlchemyError as e:
+            self.db.rollback()
+            raise DatabaseException(f"Error al actualizar satisfacción: {str(e)}")
+    
+    # 🔥 NUEVO - Actualizar perfil
+    def actualizar_perfil(
+        self,
+        id_visitante: int,
+        nombre: Optional[str] = None,
+        apellido: Optional[str] = None,
+        edad: Optional[str] = None,
+        ocupacion: Optional[str] = None,
+        pertenece_instituto: Optional[bool] = None,
+        email: Optional[str] = None
+    ) -> VisitanteAnonimo:
+        """Actualizar datos de perfil del visitante"""
+        try:
+            visitante = self.get_by_id(id_visitante)
+            
+            if nombre is not None:
+                visitante.nombre = nombre
+            if apellido is not None:
+                visitante.apellido = apellido
+            if edad is not None:
+                visitante.edad = edad
+            if ocupacion is not None:
+                visitante.ocupacion = ocupacion
+            if pertenece_instituto is not None:
+                visitante.pertenece_instituto = pertenece_instituto
+            if email is not None:  # 🔥 AGREGAR AQUÍ
+                visitante.email = email
+            
+            self.db.commit()
+            self.db.refresh(visitante)
+            return visitante
+        except SQLAlchemyError as e:
+            self.db.rollback()
+            raise DatabaseException(f"Error al actualizar perfil: {str(e)}")
     
     def registrar_actividad(self, id_visitante: int) -> VisitanteAnonimo:
         """Actualizar última visita"""
@@ -123,6 +194,47 @@ class VisitanteAnonimoRepository:
         return {
             "conversaciones_activas": conversaciones_activas or 0,
             "conversaciones_finalizadas": conversaciones_finalizadas or 0
+        }
+    
+    # 🔥 NUEVO - Estadísticas de satisfacción
+    def get_estadisticas_satisfaccion(self) -> dict:
+        """Obtener estadísticas de satisfacción general"""
+        # Total con satisfacción registrada
+        total_con_satisfaccion = self.db.query(func.count(VisitanteAnonimo.id_visitante)).filter(
+            VisitanteAnonimo.satisfaccion_estimada.isnot(None)
+        ).scalar() or 0
+        
+        if total_con_satisfaccion == 0:
+            return {
+                "total_evaluaciones": 0,
+                "promedio_satisfaccion": None,
+                "distribucion": {
+                    "1_estrella": 0,
+                    "2_estrellas": 0,
+                    "3_estrellas": 0,
+                    "4_estrellas": 0,
+                    "5_estrellas": 0
+                }
+            }
+        
+        # Promedio
+        promedio = self.db.query(func.avg(VisitanteAnonimo.satisfaccion_estimada)).filter(
+            VisitanteAnonimo.satisfaccion_estimada.isnot(None)
+        ).scalar() or 0.0
+        
+        # Distribución
+        distribucion = {}
+        for i in range(1, 6):
+            count = self.db.query(func.count(VisitanteAnonimo.id_visitante)).filter(
+                VisitanteAnonimo.satisfaccion_estimada == i
+            ).scalar() or 0
+            key = f"{i}_estrella{'s' if i > 1 else ''}"
+            distribucion[key] = count
+        
+        return {
+            "total_evaluaciones": total_con_satisfaccion,
+            "promedio_satisfaccion": round(float(promedio), 2),
+            "distribucion": distribucion
         }
     
     def count(self, dispositivo: Optional[str] = None) -> int:

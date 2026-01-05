@@ -15,6 +15,21 @@ class VisitanteAnonimoBase(BaseModel):
     # Geolocalización
     pais: Optional[str] = Field(None, max_length=50)
     ciudad: Optional[str] = Field(None, max_length=100)
+    
+    # 🔥 NUEVOS CAMPOS - Canal de acceso
+    canal_acceso: Optional[str] = Field(None, max_length=50)
+    
+    # 🔥 NUEVOS CAMPOS - Datos opcionales del visitante
+    nombre: Optional[str] = Field(None, max_length=100)
+    apellido: Optional[str] = Field(None, max_length=100)
+    edad: Optional[str] = Field(None, max_length=20)
+    ocupacion: Optional[str] = Field(None, max_length=100)
+    pertenece_instituto: Optional[bool] = False
+    
+    # 🔥 NUEVOS CAMPOS - Calidad de interacción
+    satisfaccion_estimada: Optional[int] = Field(None, ge=1, le=5, description="Satisfacción del 1 al 5")
+    email: Optional[str] = Field(None, max_length=150)
+
 
 class VisitanteAnonimoCreate(VisitanteAnonimoBase):
     pass
@@ -30,6 +45,17 @@ class VisitanteAnonimoUpdate(BaseModel):
     ultima_visita: Optional[datetime] = None
     total_conversaciones: Optional[int] = None
     total_mensajes: Optional[int] = None
+
+
+    # 🔥 NUEVOS CAMPOS
+    canal_acceso: Optional[str] = Field(None, max_length=50)
+    nombre: Optional[str] = Field(None, max_length=100)
+    apellido: Optional[str] = Field(None, max_length=100)
+    edad: Optional[str] = Field(None, max_length=20)
+    ocupacion: Optional[str] = Field(None, max_length=100)
+    pertenece_instituto: Optional[bool] = None
+    satisfaccion_estimada: Optional[int] = Field(None, ge=1, le=5)
+    email: Optional[str] = Field(None, max_length=150)
 
 class VisitanteAnonimoResponse(VisitanteAnonimoBase):
     id_visitante: int

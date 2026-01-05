@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Enum
+from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database.database import Base
@@ -37,6 +37,24 @@ class VisitanteAnonimo(Base):
     
     # Relationships
     conversaciones = relationship("ConversacionSync", back_populates="visitante", cascade="all, delete-orphan")
+
+    # ===============================
+    # NUEVOS ATRIBUTOS (ANALÍTICA Y PERFIL)
+    # ===============================
+
+    # Canal de acceso
+    canal_acceso = Column(String(50), index=True)
+
+    # Datos opcionales del visitante
+    nombre = Column(String(100))
+    apellido = Column(String(100))
+    edad = Column(String(20))
+    ocupacion = Column(String(100))
+    pertenece_instituto = Column(Boolean, default=False)
+
+    # Calidad de la interacción
+    satisfaccion_estimada = Column(Integer)
+    email = Column(String(100))
 
     def __repr__(self):
         return f"<VisitanteAnonimo(id={self.id_visitante}, sesion='{self.identificador_sesion[:20]}...')>"
