@@ -165,7 +165,6 @@ class UnidadContenidoService:
     def restaurar_contenido(self, id_contenido: int):
         return self.repo.restore(id_contenido)
     
-    # 🔥 NUEVO MÉTODO
     def actualizar_vigencias_masivo(self, id_agente: Optional[int] = None):
         """
         Actualiza el estado de todos los contenidos según sus fechas de vigencia

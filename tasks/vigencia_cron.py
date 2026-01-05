@@ -36,7 +36,6 @@ def iniciar_scheduler():
     """
     scheduler = BackgroundScheduler()
     
-    # Ejecutar todos los días a las 00:01 AM
     scheduler.add_job(
         actualizar_vigencias_diarias,
         'cron',
