@@ -268,7 +268,8 @@ from routers import (
     usuario_rol_router,
     aseguramiento_router,
     escalamiento_router,
-    websocket_router
+    websocket_router,
+    conversation_router
 )
 
 # Incluir routers de API con prefix /api/v1
@@ -295,6 +296,7 @@ app.include_router(aseguramiento_router.router, prefix="/api/v1")
 app.include_router(widget_router.router, tags=["Widget"])
 app.include_router(escalamiento_router.router, prefix="/api/v1")
 app.include_router(websocket_router.router)
+app.include_router(conversation_router.router)
 
 # ==================== HEALTH CHECK ====================
 

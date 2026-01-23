@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, HTTPException
 from typing import List, Optional
 from datetime import datetime
 
@@ -6,9 +6,78 @@ from sqlalchemy.orm import Session
 
 from database.database import get_db
 from services.visitante_anonimo_service import VisitanteAnonimoService
-from schemas.visitante_anonimo_schemas import VisitanteAnonimoResponse, VisitanteAnonimoCreate, VisitanteAnonimoUpdate
+from schemas.visitante_anonimo_schemas import VisitanteAnonimoResponse, VisitanteAnonimoCreate, VisitanteAnonimoUpdate, EmailRegistration
 
 router = APIRouter(prefix="/visitantes", tags=["Visitantes Anónimos"])
+
+
+# 🔥 NUEVO - Verificar si email existe
+@router.get("/email/{email}/exists")
+def verificar_email_existe(email: str, db: Session = Depends(get_db)):
+    service = VisitanteAnonimoService(db)
+    visitante = service.obtener_por_email(email)
+    
+    if visitante:
+        return {
+            "exists": True,
+            "visitante": {
+                "id_visitante": visitante.id_visitante,
+                "nombre": visitante.nombre,
+                "apellido": visitante.apellido,
+                "email": visitante.email,
+                "identificador_sesion": visitante.identificador_sesion
+            }
+        }
+    else:
+        return {
+            "exists": False,
+            "visitante": None
+        }
+
+# 🔥 NUEVO - Registrar visitante con email
+@router.post("/register-email", response_model=VisitanteAnonimoResponse, status_code=status.HTTP_201_CREATED)
+def registrar_con_email(
+    data: EmailRegistration, 
+    db: Session = Depends(get_db)
+):
+    """
+    Registrar nuevo visitante con email o recuperar existente
+    
+    Si el email existe:
+    - Asocia el nuevo session_id al visitante existente
+    - Actualiza última visita
+    
+    Si el email NO existe:
+    - Crea nuevo visitante con ese email
+    """
+    service = VisitanteAnonimoService(db)
+    
+    # Buscar por email
+    visitante = service.obtener_por_email(data.email)
+    
+    if visitante:
+        # Email existe → Actualizar session_id y última visita
+        update_data = VisitanteAnonimoUpdate(
+            identificador_sesion=data.session_id
+        )
+        visitante_actualizado = service.actualizar_visitante(visitante.id_visitante, update_data)
+        service.registrar_actividad(visitante.id_visitante)
+        
+        return visitante_actualizado
+    else:
+        # Email NO existe → Crear nuevo
+        nuevo_visitante_data = VisitanteAnonimoCreate(
+            identificador_sesion=data.session_id,
+            email=data.email,
+            nombre=data.nombre,
+            apellido=data.apellido,
+            edad=data.edad,
+            ocupacion=data.ocupacion,
+            pertenece_instituto=data.pertenece_instituto,
+            canal_acceso="widget"
+        )
+        return service.crear_visitante(nuevo_visitante_data)
+
 
 @router.post("/", response_model=VisitanteAnonimoResponse, status_code=status.HTTP_201_CREATED)
 def crear_visitante(visitante: VisitanteAnonimoCreate, db: Session = Depends(get_db)):

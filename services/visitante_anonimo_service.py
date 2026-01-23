@@ -112,7 +112,14 @@ class VisitanteAnonimoService:
         dispositivo: Optional[str] = None,
         navegador: Optional[str] = None,
         sistema_operativo: Optional[str] = None,
-        canal_acceso: Optional[str] = "widget"  # 🔥 NUEVO
+        canal_acceso: Optional[str] = "widget",  # 🔥 NUEVO
+
+        nombre: Optional[str] = None,
+        apellido: Optional[str] = None,
+        email: Optional[str] = None,
+        edad: Optional[str] = None,
+        ocupacion: Optional[str] = None,
+        pertenece_instituto: Optional[bool] = False  
     ) -> VisitanteAnonimo:
         """
         Obtiene un visitante existente o crea uno nuevo
@@ -151,7 +158,14 @@ class VisitanteAnonimoService:
             dispositivo=dispositivo,
             navegador=navegador,
             sistema_operativo=sistema_operativo,
-            canal_acceso=canal_acceso  # 🔥 NUEVO
+            canal_acceso=canal_acceso,
+    # 🔥 AGREGAR DATOS OPCIONALES
+            nombre=nombre,
+            apellido=apellido,
+            email=email,
+            edad=edad,
+            ocupacion=ocupacion,
+            pertenece_instituto=pertenece_instituto
         )
         
         nuevo_visitante = self.crear_visitante(visitante_data)
@@ -198,3 +212,29 @@ class VisitanteAnonimoService:
             # 🔥 NUEVO - Estadísticas de satisfacción
             "satisfaccion": stats_satisfaccion
         }
+
+    def obtener_por_email(self, email: str) -> Optional[VisitanteAnonimo]:
+        """
+        Obtener visitante por email
+        
+        Args:
+            email: Email del visitante
+            
+        Returns:
+            VisitanteAnonimo o None si no existe
+        """
+        try:
+            visitante = self.db.query(VisitanteAnonimo).filter(
+                VisitanteAnonimo.email == email
+            ).first()
+            
+            if visitante:
+                logger.info(f"✅ Visitante encontrado por email: {email}")
+            else:
+                logger.info(f"❌ No existe visitante con email: {email}")
+            
+            return visitante
+            
+        except Exception as e:
+            logger.error(f"❌ Error buscando por email: {e}")
+            return None

@@ -32,7 +32,7 @@ class OllamaAgentService:
         self.rag = RAGService(db, use_cache=True)
         self.visitante_service = VisitanteAnonimoService(db)
 
-    def chat_with_agent(
+    async def chat_with_agent(
         self, 
         id_agente: int, 
         pregunta: str,
@@ -45,7 +45,7 @@ class OllamaAgentService:
         dispositivo: Optional[str] = None,  # 🔥 NUEVO
         navegador: Optional[str] = None,  # 🔥 NUEVO
         sistema_operativo: Optional[str] = None,  # 🔥 NUEVO
-
+        guardar_en_bd: bool = True,
 
         k: Optional[int] = None,
         use_reranking: Optional[bool] = None,
@@ -66,28 +66,14 @@ class OllamaAgentService:
         # ============================================
         # OBTENER O CREAR VISITANTE
         # ============================================
-        try:
-            visitante = self.visitante_service.obtener_o_crear_visitante(
-                session_id=session_id,
-                ip_origen=ip_origen,
-                user_agent=user_agent,
-                dispositivo=dispositivo,
-                navegador=navegador,
-                sistema_operativo=sistema_operativo,
-                canal_acceso=origin
-            )
-            logger.info(f"✅ Visitante ID: {visitante.id_visitante}")
-            
-            # Registrar actividad
-            self.visitante_service.registrar_actividad(visitante.id_visitante)
-            
-            # Incrementar mensajes (entrada del usuario)
-            self.visitante_service.incrementar_mensajes(visitante.id_visitante, cantidad=1)
-            
-        except Exception as e:
-            logger.error(f"❌ Error con visitante: {e}")
-            visitante = None  # Continuar sin visitante si falla
-        # ↑↑↑ HASTA AQUÍ
+        # 🔥 NUEVO: Solo buscar visitante, NO crear
+        visitante = None
+        if guardar_en_bd:
+            try:
+                visitante = self.visitante_service.obtener_por_sesion(session_id)
+                logger.info(f"✅ Visitante registrado: {visitante.id_visitante}")
+            except:
+                logger.info("⚠️ No hay visitante registrado")
 
 
 
@@ -223,7 +209,7 @@ class OllamaAgentService:
         dispositivo: Optional[str] = None,  # 🔥 NUEVO
         navegador: Optional[str] = None,  # 🔥 NUEVO
         sistema_operativo: Optional[str] = None,  # 🔥 NUEVO
-
+        guardar_en_bd: bool = True,
         k: Optional[int] = None,
         use_reranking: Optional[bool] = None,
         temperatura: Optional[float] = None,
@@ -259,66 +245,59 @@ class OllamaAgentService:
                 return
             
             # ============================================
-            # PASO 1.5: OBTENER O CREAR VISITANTE
+            # PASO 1.5: 🔥 BUSCAR VISITANTE (por session_id O por email en frontend)
             # ============================================
-            try:
-                visitante = self.visitante_service.obtener_o_crear_visitante(
-                    session_id=session_id,
-                    ip_origen=ip_origen,
-                    user_agent=user_agent,
-                    dispositivo=dispositivo,
-                    navegador=navegador,
-                    sistema_operativo=sistema_operativo,
-                    canal_acceso=origin
-                )
-                logger.info(f"✅ Visitante ID: {visitante.id_visitante}")
-            except Exception as e:
-                logger.error(f"❌ Error con visitante: {e}")
-                visitante = None  # Continuar sin visitante si falla
-
-
+            visitante = None
+            if guardar_en_bd:
+                try:
+                    # Intentar buscar por session_id actual
+                    visitante = self.visitante_service.obtener_por_sesion(session_id)
+                    logger.info(f"✅ Visitante encontrado por session_id: {visitante.id_visitante}")
+                except:
+                    logger.info("⚠️ No hay visitante con este session_id")
+                    # El visitante se vinculará cuando ingrese email en el frontend
 
 
             # ============================================
-            # PASO 1.6: CREAR CONVERSACIÓN SI NO EXISTE (FLUJO NORMAL)
+            # PASO 1.6: 🔥 CREAR NUEVA CONVERSACIÓN (cada session_id = nueva conversación)
             # ============================================
-            try:
-                conversation = await ConversationService.get_conversation_by_session(session_id)
-                
-                if not conversation:
-                    logger.info(f"📝 Creando nueva conversación para session: {session_id}")
+            conversation = None
+            if guardar_en_bd and visitante:
+                try:
+                    # 🔥 SIEMPRE buscar por session_id (cada session_id es única conversación)
+                    conversation = await ConversationService.get_conversation_by_session(session_id)
                     
-                    conversation_data = ConversationCreate(
-                        session_id=session_id,
-                        id_agente=id_agente,
-                        agent_name=agente.nombre_agente,
-                        agent_type=agente.tipo_agente,
-                        id_visitante=visitante.id_visitante if visitante else None,
-                        origin=origin,
-                        ip_origen=ip_origen,
-                        user_agent=user_agent
-                    )
-                    conversation = await ConversationService.create_conversation(conversation_data)
-                    
-                    # Incrementar contador de conversaciones
-                    if visitante:
+                    if not conversation:
+                        # Crear nueva conversación con este session_id
+                        logger.info(f"📝 Creando nueva conversación para visitante {visitante.id_visitante}")
+                        
+                        conversation_data = ConversationCreate(
+                            session_id=session_id,
+                            id_agente=id_agente,
+                            agent_name=agente.nombre_agente,
+                            agent_type=agente.tipo_agente,
+                            id_visitante=visitante.id_visitante,  # 🔥 Mismo visitante
+                            origin=origin,
+                            ip_origen=ip_origen,
+                            user_agent=user_agent
+                        )
+                        conversation = await ConversationService.create_conversation(conversation_data)
+                        
+                        # Incrementar contador de conversaciones
                         self.visitante_service.incrementar_conversacion(visitante.id_visitante)
+                        
+                        logger.info(f"✅ Nueva conversación creada: {conversation.id}")
+                    else:
+                        logger.info(f"✅ Conversación existente: {conversation.id}")
                     
-                    logger.info(f"✅ Conversación creada: {conversation.id}")
-                else:
-                    logger.info(f"✅ Conversación existente encontrada: {conversation.id}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error con conversación: {e}")
-                conversation = None
-
-
-
+                except Exception as e:
+                    logger.error(f"❌ Error con conversación: {e}")
+                    conversation = None
 
             # ============================================
             # PASO 1.7: GUARDAR MENSAJE DEL USUARIO
             # ============================================
-            if conversation:
+            if guardar_en_bd and conversation:
                 try:
                     user_message = MessageCreate(
                         role=MessageRole.user,
@@ -337,52 +316,7 @@ class OllamaAgentService:
             # ============================================
             # PASO 2: 🔥 DETECTAR ESCALAMIENTO PRIMERO
             # ============================================
-            necesita_escalamiento = escalamiento_service.detectar_intencion_escalamiento(pregunta)
-            
-            if necesita_escalamiento:
-                logger.info(f"🔔 Escalamiento detectado en session {session_id}")
-                
-                # ============================================
-                # PASO 3: 🔥 CREAR CONVERSACIÓN EN MONGODB (solo al escalar)
-                # ============================================
-                try:
-                    # Verificar si ya existe conversación
-                    conversation = await ConversationService.get_conversation_by_session(session_id)
-                    
-                    if not conversation:
-                        # Crear conversación nueva
-                        conversation_data = ConversationCreate(
-                            session_id=session_id,
-                            id_agente=id_agente,
-                            agent_name=agente.nombre_agente,
-                            agent_type=agente.tipo_agente,
-                            id_visitante=visitante.id_visitante if visitante else None,  # 🔥 AGREGAR
-                            origin=origin,
-                            ip_origen=ip_origen,  # 🔥 AGREGAR
-                            user_agent=user_agent  # 🔥 AGREGAR
-
-                        )
-                        conversation = await ConversationService.create_conversation(conversation_data)
-                        logger.info(f"✅ Conversación creada en MongoDB por escalamiento: {session_id}")
-
-                        if visitante:
-                            self.visitante_service.incrementar_conversacion(visitante.id_visitante)
-
-                    
-                    # Guardar mensaje del usuario
-                    user_message = MessageCreate(
-                        role=MessageRole.user,
-                        content=pregunta
-                    )
-                    await ConversationService.add_message(session_id, user_message)
-
-                    if visitante:
-                        self.visitante_service.incrementar_mensajes(visitante.id_visitante, cantidad=1)
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error creando conversación en MongoDB: {e}")
-                    # Continuar con escalamiento aunque falle MongoDB
-                
+           
                 # ============================================
                 # PASO 4: ESCALAR CONVERSACIÓN
                 # ============================================
@@ -412,7 +346,7 @@ class OllamaAgentService:
                         "metadata": {
                             "agent_id": id_agente,
                             "agent_name": agente.nombre_agente,
-                            "session_id": session_id,
+                            "session_id": session_id, 
                             "escalado": True,
                             "saved_to_mongo": True  # 🔥 Se guardó porque escaló
                         }
@@ -464,6 +398,16 @@ class OllamaAgentService:
                     use_priority_boost=True,
                     priority_boost_factor=0.4
                 )
+
+                # 🔥 LOG TEMPORAL PARA DEBUG
+                print(f"=" * 80)
+                print(f"🔍 BÚSQUEDA RAG - Agente {id_agente}")
+                print(f"   Pregunta: '{pregunta[:50]}...'")
+                print(f"   Resultados encontrados: {len(results)}")
+                for i, r in enumerate(results):
+                    meta = r.get('metadata', {})
+                    print(f"   [{i+1}] ID: {meta.get('id_contenido')} | Activo: {meta.get('activo')} | Título: {meta.get('titulo', 'Sin título')[:40]}")
+                print(f"=" * 80)
                 
                 if results:
                     contexto_parts = []
@@ -526,7 +470,7 @@ class OllamaAgentService:
                 # ============================================
                 # PASO 8: 🔥 GUARDAR RESPUESTA DEL AGENTE EN MONGODB
                 # ============================================
-                if conversation:
+                if guardar_en_bd and conversation:
                     try:
                         assistant_message = MessageCreate(
                             role=MessageRole.assistant,

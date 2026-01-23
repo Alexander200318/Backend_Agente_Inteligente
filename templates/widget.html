@@ -88,7 +88,148 @@
                 </svg>
             </button>
         </div>
+
+
+
+        <!-- Modal de Email con 2 Pasos -->
+        <div id="email-required-modal" class="visitor-data-modal">
+            <div class="visitor-data-content">
+                <!-- 🔥 PASO 1: Verificar Email -->
+                <div id="email-check-step">
+                    <div class="visitor-data-header">
+                        <h3>📧 Email requerido</h3>
+                        <p>Has alcanzado el límite de mensajes gratuitos</p>
+                        <p style="font-size: 12px; color: #888; margin-top: 10px;">
+                            Para continuar, ingresa tu email
+                        </p>
+                    </div>
+                    
+                    <form id="email-required-form" class="visitor-data-form">
+                        <div class="form-group">
+                            <label for="required-email">Email *</label>
+                            <input 
+                                type="email" 
+                                id="required-email" 
+                                placeholder="tu@email.com" 
+                                required
+                                maxlength="150"
+                            >
+                        </div>
+                        
+                        <button type="submit" class="btn-submit" style="width: 100%;">
+                            Verificar Email →
+                        </button>
+                    </form>
+                    
+                    <div id="email-loading" style="display: none; text-align: center; padding: 20px;">
+                        <div style="font-size: 14px; color: #667eea;">
+                            Verificando email...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🔥 REEMPLAZO COMPLETO DEL PASO 2 DEL FORMULARIO -->
+                <!-- Copia este bloque y reemplaza el div #email-registration-step en tu widget.html -->
+
+                <div id="email-registration-step" style="display: none;">
+                    <div class="visitor-data-header">
+                        <h3>📝 Completa tu registro</h3>
+                        <p>Email no encontrado. Por favor completa tus datos</p>
+                    </div>
+                    
+                    <form id="email-registration-form" class="visitor-data-form">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="reg-email" readonly style="background: #f5f5f5;">
+                        </div>
+                        
+                        <!-- 🔥 NOMBRE con validación de solo letras y máx 25 caracteres -->
+                        <div class="form-group">
+                            <label for="reg-nombre">Nombre *</label>
+                            <input 
+                                type="text" 
+                                id="reg-nombre" 
+                                placeholder="Tu nombre" 
+                                required 
+                                maxlength="25"
+                                pattern="[A-Za-zÀ-ÿ\s]+"
+                                title="Solo letras y espacios (máx. 25 caracteres)"
+                            >
+                            <small style="font-size: 11px; color: #999;">Máximo 25 caracteres, solo letras</small>
+                        </div>
+                        
+                        <!-- 🔥 APELLIDO con validación de solo letras y máx 25 caracteres -->
+                        <div class="form-group">
+                            <label for="reg-apellido">Apellido</label>
+                            <input 
+                                type="text" 
+                                id="reg-apellido" 
+                                placeholder="Tu apellido" 
+                                maxlength="25"
+                                pattern="[A-Za-zÀ-ÿ\s]*"
+                                title="Solo letras y espacios (máx. 25 caracteres)"
+                            >
+                            <small style="font-size: 11px; color: #999;">Máximo 25 caracteres, solo letras</small>
+                        </div>
+                        
+                        <!-- 🔥 EDAD como selector con rangos -->
+                        <div class="form-group">
+                            <label for="reg-edad">Rango de Edad *</label>
+                            <select id="reg-edad" required>
+                                <option value="">Selecciona tu rango de edad</option>
+                                <option value="-18">Menor de 18 años</option>
+                                <option value="18-29">18 - 29 años</option>
+                                <option value="30-41">30 - 41 años</option>
+                                <option value="42-53">42 - 53 años</option>
+                                <option value="54-65">54 - 65 años</option>
+                                <option value="65+">65 años o más</option>
+                            </select>
+                        </div>
+                        
+                        <!-- 🔥 OCUPACIÓN como selector con opciones predefinidas -->
+                        <div class="form-group">
+                            <label for="reg-ocupacion">Ocupación *</label>
+                            <select id="reg-ocupacion" required>
+                                <option value="">Selecciona tu ocupación</option>
+                                <option value="Estudia">Estudia</option>
+                                <option value="Trabaja">Trabaja</option>
+                                <option value="Estudia_trabaja">Estudia y trabaja</option>
+                                <option value="Independiente">Trabajo independiente</option>
+                                <option value="No_trabaja">No trabaja actualmente</option>
+                                <option value="Retirado">Retirado</option>
+                                <option value="Prefiere_no_decir">Prefiere no decir</option>
+                            </select>
+                        </div>
+                        
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="reg-instituto">
+                            <label for="reg-instituto">Pertenezco al instituto</label>
+                        </div>
+                        
+                        <button type="submit" class="btn-submit" style="width: 100%;">
+                            Completar Registro →
+                        </button>
+                    </form>
+                </div>
+
+
+
+
+
+            </div>
+        </div>
+
+
+
+
+
     </div>
+
+
+
+
+
+
 
     <script src="/static/js/widget.js"></script>
     

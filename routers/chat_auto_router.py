@@ -56,6 +56,20 @@ def chat_auto(
     dispositivo = payload.client_info.dispositivo if payload.client_info else None
     navegador = payload.client_info.navegador if payload.client_info else None
     sistema_operativo = payload.client_info.sistema_operativo if payload.client_info else None
+
+    # 🔥 NUEVO: NO crear visitante antes de los 3 mensajes
+    # Solo pasar información, el servicio decidirá si guardar o no
+    visitante_registrado = False
+    try:
+        from services.visitante_anonimo_service import VisitanteAnonimoService
+        visitante_service = VisitanteAnonimoService(db)
+        visitante = visitante_service.obtener_por_sesion(payload.session_id)
+        visitante_registrado = True
+        logger.info(f"✅ Visitante registrado encontrado: {visitante.id_visitante}")
+    except:
+        logger.info(f"⚠️ No hay visitante registrado (primeros 3 mensajes)")
+        visitante_registrado = False
+
     
     agent_id = classifier.classify(payload.message)
     
@@ -78,6 +92,7 @@ def chat_auto(
             dispositivo=dispositivo,  # 🔥 NUEVO
             navegador=navegador,  # 🔥 NUEVO
             sistema_operativo=sistema_operativo,  # 🔥 NUEVO
+            guardar_en_bd=visitante_registrado,
             k=payload.k,
             use_reranking=payload.use_reranking,
             temperatura=payload.temperatura,
@@ -117,6 +132,19 @@ async def chat_auto_stream(
     dispositivo = payload.client_info.dispositivo if payload.client_info else None
     navegador = payload.client_info.navegador if payload.client_info else None
     sistema_operativo = payload.client_info.sistema_operativo if payload.client_info else None
+
+    # 🔥 NUEVO: NO crear visitante antes de los 3 mensajes
+    # Solo pasar información, el servicio decidirá si guardar o no
+    visitante_registrado = False
+    try:
+        from services.visitante_anonimo_service import VisitanteAnonimoService
+        visitante_service = VisitanteAnonimoService(db)
+        visitante = visitante_service.obtener_por_sesion(payload.session_id)
+        visitante_registrado = True
+        logger.info(f"✅ Visitante registrado encontrado: {visitante.id_visitante}")
+    except:
+        logger.info(f"⚠️ No hay visitante registrado (primeros 3 mensajes)")
+        visitante_registrado = False
     
     async def event_generator():
         last_event_time = datetime.now()
@@ -169,7 +197,7 @@ async def chat_auto_stream(
                 dispositivo=dispositivo,  # 🔥 NUEVO
                 navegador=navegador,  # 🔥 NUEVO
                 sistema_operativo=sistema_operativo,  # 🔥 NUEVO
-                
+                guardar_en_bd=visitante_registrado,
                 k=payload.k,
                 use_reranking=payload.use_reranking,
                 temperatura=payload.temperatura,

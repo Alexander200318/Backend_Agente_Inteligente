@@ -5,13 +5,21 @@ let websocket = null;
 let isEscalated = false;
 let humanAgentName = null;
 
+// 🔥 SISTEMA DE REGISTRO - SOLO EMAIL
+let messageCount = 0;
+const MAX_MESSAGES_WITHOUT_EMAIL = 3;
+let isEmailVerified = false;
+let registeredVisitorId = null;
+let emailModal;
+let emailRequiredForm;
+let emailRegistrationForm; // 🔥 NUEVO: Formulario completo de registro
+
 (function() {
     'use strict';
     
     // Bloquear errores de extensiones
     const originalError = console.error;
     
-
     console.error = function(...args) {
         const msg = args.join(' ');
         if (msg.includes('Cannot determine language') || 
@@ -53,45 +61,35 @@ let humanAgentName = null;
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
-
-
 // ==================== GESTIÓN DE SESIONES ====================
 const SESSION_STORAGE_KEY = 'tecai_session_id';
 const SESSION_TIMESTAMP_KEY = 'tecai_session_timestamp';
 const SESSION_PAGE_KEY = 'tecai_session_page';
-const SESSION_TIMEOUT_MINUTES = 10; // 🔥 Tiempo de expiración
+const SESSION_TIMEOUT_MINUTES = 10;
 
 let SESSION_ID = null;
 let CURRENT_PAGE = null;
 
-
-/**
- * Obtener identificador único de la página actual
- */
 function obtenerIdentificadorPagina() {
-    // Usar pathname + hash como identificador único
     const path = window.location.pathname;
     const hash = window.location.hash;
     const page = path + hash;
     
-    // Crear un hash simple de la URL
     let hashCode = 0;
     for (let i = 0; i < page.length; i++) {
         const char = page.charCodeAt(i);
         hashCode = ((hashCode << 5) - hashCode) + char;
-        hashCode = hashCode & hashCode; // Convert to 32bit integer
+        hashCode = hashCode & hashCode;
     }
     
     return Math.abs(hashCode).toString(36);
 }
-
 
 function generarSessionID() {
     const timestamp = Date.now();
     const random = Math.random().toString(36).slice(2, 10);
     const pageId = obtenerIdentificadorPagina();
     
-    // Formato: web-TIMESTAMP-RANDOM-PAGEID
     return `web-${timestamp}-${random}-${pageId}`;
 }
 
@@ -119,17 +117,12 @@ function actualizarTimestampSesion() {
     }
 }
 
-/**
- * Verifica si la sesión sigue siendo válida y actualiza timestamp
- * Retorna true si la sesión es válida, false si expiró
- */
 function verificarYActualizarSesion() {
     try {
         const storedTimestamp = localStorage.getItem(SESSION_TIMESTAMP_KEY);
         const storedPage = localStorage.getItem(SESSION_PAGE_KEY);
         const currentPage = window.location.pathname + window.location.hash;
         
-        // Verificar si cambió de página
         if (storedPage && storedPage !== currentPage) {
             console.log('📄 Cambio de página detectado → Nueva sesión requerida');
             SESSION_ID = crearNuevaSesion();
@@ -148,13 +141,12 @@ function verificarYActualizarSesion() {
             }
         }
         
-        // Sesión válida, actualizar timestamp
         actualizarTimestampSesion();
         return true;
         
     } catch (e) {
         console.warn('Error verificando sesión:', e);
-        return true; // Continuar en caso de error
+        return true;
     }
 }
 
@@ -165,7 +157,6 @@ function obtenerOGenerarSession() {
         const storedPage = localStorage.getItem(SESSION_PAGE_KEY);
         const currentPage = window.location.pathname + window.location.hash;
         
-        // 🔥 Verificar si es una página diferente
         if (storedPage && storedPage !== currentPage) {
             console.log('📄 Página diferente detectada');
             console.log('   Anterior:', storedPage);
@@ -178,7 +169,6 @@ function obtenerOGenerarSession() {
             const tiempoTranscurrido = Date.now() - parseInt(storedTimestamp);
             const minutos = tiempoTranscurrido / 1000 / 60;
             
-            // 🔥 Verificar si expiró por timeout
             if (minutos < SESSION_TIMEOUT_MINUTES) {
                 console.log(`♻️ Sesión activa (${minutos.toFixed(1)} min desde última actividad)`);
                 console.log(`   Session ID: ${storedSessionId}`);
@@ -191,7 +181,6 @@ function obtenerOGenerarSession() {
             }
         }
         
-        // No hay sesión previa
         console.log('🆕 Primera visita o sesión no encontrada');
         return crearNuevaSesion();
         
@@ -207,13 +196,6 @@ CURRENT_PAGE = window.location.pathname + window.location.hash;
 console.log('🆔 SESSION_ID activo:', SESSION_ID);
 console.log('📄 Página actual:', CURRENT_PAGE);
 
-
-
-
-
-
-
-
 // Variables globales
 let speechSynthesis = window.speechSynthesis;
 let availableVoices = [];
@@ -226,13 +208,10 @@ function initVoices() {
     console.log('Voces disponibles:', availableVoices.length);
 }
 
-
-
 // ==================== DETECCIÓN DE INFORMACIÓN DEL CLIENTE ====================
 function getClientInfo() {
     const ua = navigator.userAgent;
     
-    // Detectar tipo de dispositivo
     let deviceType = 'desktop';
     if (/tablet|ipad|playbook|silk/i.test(ua)) {
         deviceType = 'tablet';
@@ -240,7 +219,6 @@ function getClientInfo() {
         deviceType = 'mobile';
     }
     
-    // Detectar navegador
     let browser = 'Unknown';
     if (ua.indexOf('Firefox') > -1) {
         browser = 'Firefox';
@@ -256,7 +234,6 @@ function getClientInfo() {
         browser = 'Safari';
     }
     
-    // Detectar sistema operativo
     let os = 'Unknown';
     if (ua.indexOf('Windows NT 10.0') > -1) os = 'Windows 10';
     else if (ua.indexOf('Windows NT 6.3') > -1) os = 'Windows 8.1';
@@ -277,15 +254,12 @@ function getClientInfo() {
             height: window.screen.height
         },
         idioma: navigator.language || navigator.userLanguage,
-        canal_acceso: 'widget'  // 🔥 NUEVO
+        canal_acceso: 'widget'
     };
 }
 
-// Obtener info al cargar
 const CLIENT_INFO = getClientInfo();
 console.log('📱 Información del cliente:', CLIENT_INFO);
-
-
 
 speechSynthesis.onvoiceschanged = initVoices;
 initVoices();
@@ -316,15 +290,134 @@ document.addEventListener('DOMContentLoaded', () => {
     toggleAgentsBtn = document.getElementById('toggle-agents-btn');
     voiceToggleBtn = document.getElementById('voice-toggle-btn');
     micButton = document.getElementById('mic-button');
+    
+    emailModal = document.getElementById('email-required-modal');
+    emailRequiredForm = document.getElementById('email-required-form');
+    emailRegistrationForm = document.getElementById('email-registration-form'); // 🔥 NUEVO
+    
+    // 🔥 Event listener para formulario de email simple
+    if (emailRequiredForm) {
+        emailRequiredForm.addEventListener('submit', handleEmailCheck);
+    }
+    
+    // 🔥 Event listener para formulario de registro completo
+    if (emailRegistrationForm) {
+        emailRegistrationForm.addEventListener('submit', handleRegistrationSubmit);
+    }
+
+
+
+
+    // 🔥 NUEVO: Validación en tiempo real para nombre y apellido
+    const nombreInput = document.getElementById('reg-nombre');
+    const apellidoInput = document.getElementById('reg-apellido');
+
+    if (nombreInput) {
+        nombreInput.addEventListener('input', function(e) {
+            this.value = this.value.replace(/[^A-Za-zÀ-ÿ\s]/g, '');
+            if (this.value.length > 25) {
+                this.value = this.value.substring(0, 25);
+            }
+        });
+        
+        nombreInput.addEventListener('blur', function(e) {
+            this.value = this.value.trim();
+            if (this.value.length === 0 && this.hasAttribute('required')) {
+                this.setCustomValidity('El nombre es requerido');
+            } else if (this.value.length > 25) {
+                this.setCustomValidity('El nombre no puede superar 25 caracteres');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+    }
+
+    if (apellidoInput) {
+        apellidoInput.addEventListener('input', function(e) {
+            this.value = this.value.replace(/[^A-Za-zÀ-ÿ\s]/g, '');
+            if (this.value.length > 25) {
+                this.value = this.value.substring(0, 25);
+            }
+        });
+        
+        apellidoInput.addEventListener('blur', function(e) {
+            this.value = this.value.trim();
+            if (this.value.length > 25) {
+                this.setCustomValidity('El apellido no puede superar 25 caracteres');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+    }
+
+
+
+
+
+
+
+
+    // 🔥 NUEVO: Cerrar modal con tecla ESC
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && emailModal && emailModal.classList.contains('active')) {
+            hideEmailRequiredModal();
+            console.log('🚪 Modal cerrado con tecla ESC');
+        }
+
+
+    });
+
+    try {
+        const savedCount = sessionStorage.getItem('message_count');
+        if (savedCount) {
+            messageCount = parseInt(savedCount);
+            console.log(`📊 Mensajes enviados en esta sesión: ${messageCount}`);
+        }
+    } catch (e) {
+        console.warn('No se pudo recuperar contador de mensajes');
+    }
+
+    try {
+        const emailVerified = sessionStorage.getItem('email_verified');
+        const visitorId = sessionStorage.getItem('visitor_id');
+        
+        if (emailVerified === 'true' && visitorId) {
+            isEmailVerified = true;
+            registeredVisitorId = parseInt(visitorId);
+            console.log('✅ Email ya verificado en esta sesión');
+            console.log('   Visitor ID:', registeredVisitorId);
+        }
+    } catch (e) {
+        console.warn('No se pudo recuperar estado de email');
+    }
 
     chatButton.addEventListener('click', () => {
-        // 🔥 Verificar si la sesión expiró antes de abrir
-        const sessionValida = verificarYActualizarSesion();
+        console.log('🖱️ CLICK en chat button');
         
+        // 🔥 NUEVO: Toggle - si está abierto, cerrarlo
+        if (chatContainer.classList.contains('active')) {
+            chatContainer.classList.remove('active');
+            
+            // Cerrar modal si está abierto
+            if (emailModal && emailModal.classList.contains('active')) {
+                hideEmailRequiredModal();
+            }
+            
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+            
+            actualizarTimestampSesion();
+            console.log('🚪 Chat cerrado desde botón flotante → Timestamp actualizado');
+            return; // 🔥 Importante: salir de la función
+        }
+        
+        // Si está cerrado, abrirlo normalmente
+        const sessionValida = verificarYActualizarSesion();
         chatContainer.classList.add('active');
         
         if (chatMessages.children.length === 0 || !sessionValida) {
-            // Limpiar mensajes si la sesión expiró
             if (!sessionValida) {
                 chatMessages.innerHTML = '';
             }
@@ -337,15 +430,18 @@ document.addEventListener('DOMContentLoaded', () => {
     closeChat.addEventListener('click', () => {
         chatContainer.classList.remove('active');
         
-        // Cerrar WebSocket si existe
+        // 🔥 NUEVO: Cerrar modal si está abierto
+        if (emailModal && emailModal.classList.contains('active')) {
+            hideEmailRequiredModal();
+        }
+        
         if (websocket) {
             websocket.close();
             websocket = null;
         }
         
         actualizarTimestampSesion();
-        console.log('🚪 Chat cerrado → Generando nueva sesión para próxima visita');
-   
+        console.log('🚪 Chat cerrado → Timestamp actualizado');
     });
 
     sendButton.addEventListener('click', sendMessage);
@@ -385,7 +481,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initSpeechRecognition();
 });
 
-
 // ==================== 🔥 SPEECH RECOGNITION ====================
 function initSpeechRecognition() {
     console.log('🔧 [INIT] Iniciando configuración de Speech Recognition...');
@@ -401,7 +496,6 @@ function initSpeechRecognition() {
     
     console.log('✅ [INIT] Elementos DOM encontrados correctamente');
 
-    // Verificar soporte del navegador
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     console.log('🔍 [INIT] window.SpeechRecognition:', typeof window.SpeechRecognition);
@@ -429,7 +523,6 @@ function initSpeechRecognition() {
         return;
     }
     
-    // Configuración
     recognition.lang = 'es-ES';
     recognition.continuous = false;
     recognition.interimResults = false;
@@ -444,12 +537,10 @@ function initSpeechRecognition() {
 
     console.log('✅ [INIT] Speech Recognition inicializado correctamente');
 
-    // Eventos
     recognition.onstart = function() {
         console.log('🎤 [EVENT] onstart - Micrófono activado');
         console.log('⏰ [EVENT] Timestamp:', new Date().toLocaleTimeString());
         
-        // 🔥 Limpiar timeout
         if (startTimeout) {
             clearTimeout(startTimeout);
             startTimeout = null;
@@ -461,7 +552,6 @@ function initSpeechRecognition() {
         micButton.style.backgroundColor = '#ffe6e6';
         micButton.style.transform = 'scale(1.1)';
         
-        // Añadir feedback visual en el chat
         const feedbackDiv = document.createElement('div');
         feedbackDiv.id = 'voice-feedback';
         feedbackDiv.style.cssText = 'text-align: center; padding: 10px; color: #e74c3c; font-size: 12px; animation: pulse 1s infinite;';
@@ -505,7 +595,6 @@ function initSpeechRecognition() {
             console.log('✅ [RESULT] Transcripción:', transcript);
             console.log('🎯 [RESULT] Confianza:', (confidence * 100).toFixed(1) + '%');
             
-            // Remover feedback
             const feedback = document.getElementById('voice-feedback');
             if (feedback) {
                 feedback.remove();
@@ -528,12 +617,11 @@ function initSpeechRecognition() {
         console.log('🎤 [EVENT] onend - Reconocimiento terminado');
         console.log('⏰ [EVENT] Timestamp:', new Date().toLocaleTimeString());
         isListening = false;
-        isStarting = false; // 🔥 Reset flag
+        isStarting = false;
         micButton.style.color = '';
         micButton.style.backgroundColor = '';
         micButton.style.transform = '';
         
-        // Remover feedback si existe
         const feedback = document.getElementById('voice-feedback');
         if (feedback) {
             feedback.remove();
@@ -549,12 +637,11 @@ function initSpeechRecognition() {
         console.log('⏰ [ERROR] Timestamp:', new Date().toLocaleTimeString());
         
         isListening = false;
-        isStarting = false; // 🔥 Reset flag
+        isStarting = false;
         micButton.style.color = '';
         micButton.style.backgroundColor = '';
         micButton.style.transform = '';
         
-        // Remover feedback
         const feedback = document.getElementById('voice-feedback');
         if (feedback) feedback.remove();
 
@@ -594,7 +681,6 @@ function initSpeechRecognition() {
         addBotMessage(`${errorIcon} ${errorMsg}`);
     };
 
-    // Event listener para el botón
     micButton.addEventListener('click', async function(e) {
         console.log('🖱️ [CLICK] Botón de micrófono clickeado');
         e.preventDefault();
@@ -604,7 +690,6 @@ function initSpeechRecognition() {
         console.log('📊 [STATE] isStarting:', isStarting);
         console.log('📊 [STATE] recognition:', recognition ? 'Existe' : 'No existe');
         
-        // 🔥 Evitar clics múltiples
         if (isStarting) {
             console.log('⚠️ [CLICK] Ya se está iniciando, ignorando clic...');
             return;
@@ -619,27 +704,23 @@ function initSpeechRecognition() {
                 console.error('❌ [ACTION] Error al detener:', error);
             }
         } else {
-            isStarting = true; // 🔥 Marcar que está iniciando
+            isStarting = true;
             console.log('🎤 [ACTION] Intentando iniciar reconocimiento...');
             
-            // 🔥 Solicitar permisos explícitamente con getUserMedia
             try {
                 console.log('🎤 [PERMISSIONS] Solicitando permisos con getUserMedia...');
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 console.log('✅ [PERMISSIONS] Permisos obtenidos!');
                 
-                // Detener el stream inmediatamente (solo lo usamos para obtener permisos)
                 stream.getTracks().forEach(track => track.stop());
                 console.log('🔇 [PERMISSIONS] Stream cerrado');
                 
-                // 🔥 Pequeña pausa para evitar race condition
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
-                // Ahora sí iniciar el reconocimiento
                 startRecognition();
                 
             } catch (permError) {
-                isStarting = false; // 🔥 Reset flag
+                isStarting = false;
                 console.error('❌ [PERMISSIONS] Error obteniendo permisos:', permError);
                 
                 if (permError.name === 'NotAllowedError' || permError.name === 'PermissionDeniedError') {
@@ -667,7 +748,6 @@ function startRecognition() {
     console.log('📊 [START] Estado actual - isStarting:', isStarting);
     console.log('📊 [START] recognition existe:', !!recognition);
     
-    // 🔥 No iniciar si ya está escuchando
     if (isListening) {
         console.log('⚠️ [START] Ya está escuchando, abortando...');
         isStarting = false;
@@ -678,7 +758,6 @@ function startRecognition() {
         recognition.start();
         console.log('✅ [START] recognition.start() ejecutado sin errores');
         
-        // 🔥 NUEVO: Timeout de seguridad - si no hay evento onstart en 3 segundos
         startTimeout = setTimeout(() => {
             console.error('⏰ [TIMEOUT] No se recibió evento onstart en 3 segundos');
             console.log('🔍 [TIMEOUT] Estado - isListening:', isListening, 'isStarting:', isStarting);
@@ -686,7 +765,6 @@ function startRecognition() {
             isStarting = false;
             isListening = false;
             
-            // Intentar detener por si acaso
             try {
                 recognition.stop();
             } catch (e) {
@@ -706,7 +784,6 @@ function startRecognition() {
         console.error('❌ [START] Error.name:', error.name);
         console.error('❌ [START] Error.message:', error.message);
         
-        // 🔥 Limpiar timeout
         if (startTimeout) {
             clearTimeout(startTimeout);
             startTimeout = null;
@@ -728,14 +805,12 @@ function toggleVoice() {
     voiceToggleBtn.classList.toggle('active', voiceEnabled);
     
     if (voiceEnabled) {
-        // Cargar voces si no están disponibles
         if (availableVoices.length === 0) {
             availableVoices = speechSynthesis.getVoices();
         }
         
         addBotMessage(`🔊 Voz activada. ${availableVoices.length} voces disponibles.`);
         
-        // Prueba de voz
         setTimeout(() => {
             speakText('Hola, voz de prueba activada');
         }, 500);
@@ -744,6 +819,7 @@ function toggleVoice() {
         addBotMessage('🔇 Voz desactivada.');
     }
 }
+
 
 function speakText(text) {
     if (!voiceEnabled || !text) return;
@@ -808,9 +884,6 @@ function seleccionarAgente(card, agentId, agentName) {
     }
 }
 
-
-
-
 async function cargarMensajeBienvenida(agentId) {
     try {
         const res = await fetch(`${API_BASE_URL}/agentes/${agentId}/welcome`);
@@ -874,12 +947,21 @@ async function cargarAgentes() {
             card.dataset.agentId = agente.id_agente;
             card.dataset.agentName = agente.nombre_agente;
             
-            const iconMap = {
-                'especializado': '🎯',
-                'router': '🔀',
-                'hibrido': '⚡'
-            };
-            const icon = iconMap[agente.tipo_agente] || '🤖';
+            // 🔥 NUEVO: Usar el icono de la base de datos si existe
+            let icon = '🤖'; // Icono por defecto
+
+            if (agente.icono) {
+                // Si el agente tiene icono definido en la BD, usarlo
+                icon = agente.icono;
+            } else {
+                // Fallback: mapeo por tipo de agente
+                const iconMap = {
+                    'especializado': '🎯',
+                    'router': '🔀',
+                    'hibrido': '⚡'
+                };
+                icon = iconMap[agente.tipo_agente] || '🤖';
+            }
             
             card.innerHTML = `
                 <div class="agent-card-icon">${icon}</div>
@@ -908,9 +990,6 @@ async function cargarAgentes() {
     }
 }
 
-
-
-
 // ==================== FUNCIONES ====================
 async function inicializarChat() {
     // 🔥 Si hay agente seleccionado, usar su bienvenida
@@ -929,9 +1008,15 @@ async function sendMessage() {
     const mensaje = chatInput.value.trim();
     if (!mensaje) return;
 
+    // 🔥 Verificar límite de mensajes
+    if (!checkMessageLimit()) {
+        console.log('🚫 Límite de mensajes alcanzado, mostrando modal de email');
+        showEmailRequiredModal();
+        return;
+    }
+
     // 🔥 Verificar sesión antes de enviar
     const sessionValida = verificarYActualizarSesion();
-
 
     if (!sessionValida) {
         // La sesión expiró, mostrar mensaje y limpiar chat
@@ -940,14 +1025,13 @@ async function sendMessage() {
         
         // Esperar un momento y luego permitir el envío con la nueva sesión
         setTimeout(() => {
-            chatInput.value = mensaje; // Restaurar el mensaje
-            sendMessage(); // Reintentar envío
+            chatInput.value = mensaje;
+            sendMessage();
         }, 1000);
         return;
     }
 
-
-    // WebSocket check...
+    // WebSocket check
     if (isEscalated && websocket && websocket.readyState === WebSocket.OPEN) {
         addUserMessage(mensaje);
         chatInput.value = '';
@@ -989,7 +1073,6 @@ async function sendMessage() {
                 message: mensaje,
                 session_id: SESSION_ID,
                 origin: "widget",
-                // 🔥 AGREGAR INFORMACIÓN DEL CLIENTE
                 client_info: CLIENT_INFO
             };
 
@@ -1033,7 +1116,7 @@ async function sendMessage() {
                 
                 success = true;
                 console.log('✅ Stream completado exitosamente');
-
+                incrementMessageCount();
             } catch (fetchError) {
                 clearTimeout(timeoutId);
                 
@@ -1084,7 +1167,6 @@ async function sendMessage() {
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
-
 
 function mostrarNotificacionExpiracion(minutosTranscurridos) {
     const mensaje = `⏱️ Tu conversación anterior finalizó por inactividad (${minutosTranscurridos.toFixed(0)} minutos).
@@ -1144,7 +1226,7 @@ async function processStream(response) {
                     const event = JSON.parse(jsonStr);
 
                     if (event.session_id && event.session_id !== SESSION_ID) {
-                    continue;
+                        continue;
                     }
 
                     switch (event.type) {
@@ -1154,40 +1236,26 @@ async function processStream(response) {
                             
                         case 'context':
                             console.log('📚', event.content);
-                            
                             break;
                             
                         case 'classification':
                             console.log('🎯 Agente clasificado:', event.agent_id);
                             
-                            // 🔥 En modo auto NO se mantiene agente seleccionado
                             if (event.stateless) {
                                 console.log('📌 Modo stateless: agente temporal para esta pregunta');
                             }
                             break;
 
-
-
                         case 'confirmacion_escalamiento':
                             console.log('🔔 Solicitud de confirmación de escalamiento');
                             
-                            // Ocultar typing indicator
                             typingIndicator.classList.remove('active');
-                            
-                            // Mostrar mensaje de confirmación
                             addBotMessage(event.content);
-                            
-                            // Hacer scroll
                             scrollToBottom();
                             break;
-
-
-
                             
                         case 'token':
                             if (!currentBotMessageDiv) {
-                                
-                                
                                 currentBotMessageDiv = document.createElement('div');
                                 currentBotMessageDiv.className = 'message bot streaming';
                                 currentBotMessageDiv.innerHTML = `
@@ -1200,10 +1268,8 @@ async function processStream(response) {
                                 chatMessages.appendChild(currentBotMessageDiv);
                                 messageContent = currentBotMessageDiv.querySelector('.bot-text');
 
-                                 // 🔥 2. Forzar reflow (para que el navegador pinte el div)
+                                // Forzar reflow
                                 currentBotMessageDiv.offsetHeight;
-                                
-                                // 🔥 3. AHORA sí ocultar loader
                                 typingIndicator.classList.remove('active');
                             }
                             
@@ -1228,7 +1294,6 @@ async function processStream(response) {
                             speakText(fullResponse);
                             break;
 
-
                         case 'escalamiento':
                             console.log('🔔 Conversación escalada');
                             console.log('🔍 session_id original:', SESSION_ID);
@@ -1238,7 +1303,6 @@ async function processStream(response) {
                             isEscalated = true;
                             humanAgentName = event.metadata?.usuario_nombre || "Agente humano";
                             
-                            // 🔥 ACTUALIZAR SESSION_ID al nuevo
                             if (event.nuevo_session_id) {
                                 SESSION_ID = event.nuevo_session_id;
                                 
@@ -1253,16 +1317,14 @@ async function processStream(response) {
                             connectWebSocket(SESSION_ID);
                             mostrarIndicadorEscalamiento(humanAgentName);
                             break;
-                                                
                             
                         case 'error':
                             console.error('❌', event.content);
                             typingIndicator.classList.remove('active');
                             
-                            // 🔥 Si es error de escalamiento, mostrar en chat
                             if (event.content.includes('seleccionar un agente específico')) {
                                 addBotMessage(event.content);
-                                return; // No lanzar error
+                                return;
                             }
                             
                             throw new Error(event.content);
@@ -1298,7 +1360,6 @@ async function processStream(response) {
     }
 }
 
-
 function connectWebSocket(sessionId) {
     if (websocket && websocket.readyState === WebSocket.OPEN) {
         console.log('⚠️ WebSocket ya conectado');
@@ -1313,56 +1374,49 @@ function connectWebSocket(sessionId) {
     websocket.onopen = function(e) {
         console.log('✅ WebSocket conectado');
         
-        // Enviar join
         websocket.send(JSON.stringify({
             type: 'join',
             role: 'user'
         }));
     };
     
-
-
-
-websocket.onmessage = function(event) {
-    const data = JSON.parse(event.data);
-    console.log('📨 WebSocket mensaje:', data);
-    
-    switch(data.type) {
-        case 'escalamiento_info':
-            if (data.escalado && data.usuario_nombre) {
-                humanAgentName = data.usuario_nombre;
-                mostrarIndicadorEscalamiento(data.usuario_nombre);
-            }
-            break;
+    websocket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        console.log('📨 WebSocket mensaje:', data);
         
-        case 'message':
-            if (data.role === 'human_agent') {
-                // 🔥 Mensaje del humano - siempre mostrar con nombre
-                const nombreAgente = data.user_name || humanAgentName || 'Agente Humano';
-                addHumanMessage(data.content, nombreAgente);
-                speakText(data.content);
-            }
-            break;
-        
-        case 'typing':
-            if (data.is_typing) {
-                mostrarIndicadorEscribiendo(data.user_name || humanAgentName || 'Agente');
-            } else {
-                ocultarIndicadorEscribiendo();
-            }
-            break;
-        
-        case 'user_joined':
-            if (data.role === 'human') {
-                humanAgentName = data.user_name;
-                addSystemMessage(`👨‍💼 ${data.user_name} se ha unido a la conversación`);
-                mostrarIndicadorEscalamiento(data.user_name);
-            }
-            break;
-    }
-};
-
-
+        switch(data.type) {
+            case 'escalamiento_info':
+                if (data.escalado && data.usuario_nombre) {
+                    humanAgentName = data.usuario_nombre;
+                    mostrarIndicadorEscalamiento(data.usuario_nombre);
+                }
+                break;
+            
+            case 'message':
+                if (data.role === 'human_agent') {
+                    const nombreAgente = data.user_name || humanAgentName || 'Agente Humano';
+                    addHumanMessage(data.content, nombreAgente);
+                    speakText(data.content);
+                }
+                break;
+            
+            case 'typing':
+                if (data.is_typing) {
+                    mostrarIndicadorEscribiendo(data.user_name || humanAgentName || 'Agente');
+                } else {
+                    ocultarIndicadorEscribiendo();
+                }
+                break;
+            
+            case 'user_joined':
+                if (data.role === 'human') {
+                    humanAgentName = data.user_name;
+                    addSystemMessage(`👨‍💼 ${data.user_name} se ha unido a la conversación`);
+                    mostrarIndicadorEscalamiento(data.user_name);
+                }
+                break;
+        }
+    };
     
     websocket.onerror = function(error) {
         console.error('❌ WebSocket error:', error);
@@ -1379,7 +1433,7 @@ function sendMessageViaWebSocket(content) {
         console.error('❌ WebSocket no conectado');
         return;
     }
-        // 🔥 AGREGAR LOG
+    
     console.log('📤 Enviando mensaje via WebSocket:');
     console.log('   - SESSION_ID actual:', SESSION_ID);
     console.log('   - content:', content);
@@ -1391,7 +1445,6 @@ function sendMessageViaWebSocket(content) {
 }
 
 function mostrarIndicadorEscalamiento(nombreHumano) {
-    // Crear o actualizar indicador en la UI
     let indicator = document.getElementById('human-agent-indicator');
     
     if (!indicator) {
@@ -1425,7 +1478,6 @@ function mostrarIndicadorEscalamiento(nombreHumano) {
         </div>
     `;
     
-    // Agregar estilos de animación si no existen
     if (!document.getElementById('human-indicator-styles')) {
         const style = document.createElement('style');
         style.id = 'human-indicator-styles';
@@ -1510,11 +1562,6 @@ function ocultarIndicadorEscribiendo() {
     }
 }
 
-
-
-
-
-
 function addUserMessage(text) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'message user';
@@ -1562,4 +1609,346 @@ function formatBotMessage(text) {
     text = text.replace(/\n/g, '<br>');
     text = text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: #667eea; text-decoration: underline;">$1</a>');
     return text;
+}
+
+
+// ==================== SISTEMA DE REGISTRO OBLIGATORIO ====================
+
+function showEmailRequiredModal() {
+    if (!emailModal) return;
+    
+    // Resetear modal al estado inicial (paso 1)
+    document.getElementById('email-check-step').style.display = 'block';
+    document.getElementById('email-registration-step').style.display = 'none';
+    document.getElementById('required-email').value = '';
+    
+    emailModal.classList.add('active');
+    
+    setTimeout(() => {
+        const input = document.getElementById('required-email');
+        if (input) input.focus();
+    }, 300);
+}
+
+function hideEmailRequiredModal() {
+    if (!emailModal) return;
+    emailModal.classList.remove('active');
+    
+    setTimeout(() => {
+        // Resetear al paso 1
+        const checkStep = document.getElementById('email-check-step');
+        const regStep = document.getElementById('email-registration-step');
+        const loading = document.getElementById('email-loading');
+        const form = document.getElementById('email-required-form');
+        const regLoading = document.getElementById('registration-loading');
+        
+        if (checkStep) checkStep.style.display = 'block';
+        if (regStep) regStep.style.display = 'none';
+        if (loading) loading.style.display = 'none';
+        if (form) form.style.display = 'block';
+        if (regLoading) regLoading.remove(); // 🔥 Remover loading de registro si existe
+        
+        // Limpiar inputs
+        const emailInput = document.getElementById('required-email');
+        if (emailInput) emailInput.value = '';
+        
+        if (emailRequiredForm) emailRequiredForm.reset();
+        if (emailRegistrationForm) emailRegistrationForm.reset();
+        
+        console.log('🔄 Modal completamente reseteado');
+    }, 300);
+}
+
+// 🔥 PASO 1: Verificar si el email existe
+async function handleEmailCheck(e) {
+    e.preventDefault();
+    
+    const emailInput = document.getElementById('required-email');
+    const email = emailInput?.value.trim();
+    
+    if (!email) {
+        alert('Por favor ingresa un email válido');
+        return;
+    }
+    
+    // 🔥 NUEVO: Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        alert('Por favor ingresa un email válido');
+        return;
+    }
+    
+    // Mostrar loading
+    const form = document.getElementById('email-required-form');
+    const loading = document.getElementById('email-loading');
+    
+    if (form) form.style.display = 'none';
+    if (loading) loading.style.display = 'block';
+    
+    try {
+        console.log('🔍 Verificando email:', email);
+        const checkResponse = await fetch(`${API_BASE_URL}/visitantes/email/${encodeURIComponent(email)}/exists`);
+        
+        if (!checkResponse.ok) {
+            throw new Error('Error verificando email');
+        }
+        
+        const checkData = await checkResponse.json();
+        console.log('📊 Resultado verificación:', checkData);
+        
+        if (checkData.exists) {
+            console.log('✅ Email existe, vinculando sesión...');
+            await vincularSesionExistente(email, checkData.visitante);
+        } else {
+            console.log('❌ Email no existe, mostrando formulario de registro');
+            mostrarFormularioRegistro(email);
+        }
+        
+    } catch (error) {
+        console.error('❌ Error verificando email:', error);
+        
+        // 🔥 CRÍTICO: Restaurar formulario en caso de error
+        if (form) form.style.display = 'block';
+        if (loading) loading.style.display = 'none';
+        
+        alert('❌ Error al verificar email. Por favor intenta de nuevo.');
+    }
+}
+
+async function vincularSesionExistente(email, visitanteData) {
+    try {
+        console.log('🔗 Vinculando nuevo session_id al visitante existente...');
+        
+        // 🔥 Actualizar identificador_sesion del visitante
+        const updateResponse = await fetch(`${API_BASE_URL}/visitantes/${visitanteData.id_visitante}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                identificador_sesion: SESSION_ID  // 🔥 Nuevo session_id
+            })
+        });
+        
+        if (!updateResponse.ok) {
+            throw new Error('Error actualizando sesión');
+        }
+        
+        const updatedVisitante = await updateResponse.json();
+        console.log('✅ Session_id actualizado:', updatedVisitante);
+        
+        // 🔥 NO crear conversación aquí
+        // La conversación se creará automáticamente al enviar el primer mensaje
+        // con el nuevo session_id
+        
+        // Guardar datos
+        registeredVisitorId = updatedVisitante.id_visitante;
+        isEmailVerified = true;
+        
+        try {
+            sessionStorage.setItem('email_verified', 'true');
+            sessionStorage.setItem('visitor_id', registeredVisitorId);
+            localStorage.setItem('visitor_email', email);
+        } catch (e) {
+            console.warn('No se pudo guardar en storage');
+        }
+        
+        // Cerrar modal y mostrar mensaje
+        hideEmailRequiredModal();
+        addBotMessage(`✅ ¡Bienvenido de nuevo${visitanteData.nombre ? ' ' + visitanteData.nombre : ''}! Puedes continuar chateando.`);
+        
+        // Resetear formulario
+        document.getElementById('email-required-form').reset();
+        document.getElementById('email-required-form').style.display = 'block';
+        document.getElementById('email-loading').style.display = 'none';
+        
+    } catch (error) {
+        console.error('❌ Error vinculando sesión:', error);
+        alert('❌ Error al vincular sesión. Por favor intenta de nuevo.');
+        
+        // Restaurar formulario
+        document.getElementById('email-required-form').style.display = 'block';
+        document.getElementById('email-loading').style.display = 'none';
+    }
+}
+
+// 🔥 Mostrar formulario de registro completo
+function mostrarFormularioRegistro(email) {
+    // Ocultar paso 1
+    document.getElementById('email-check-step').style.display = 'none';
+    
+    // Mostrar paso 2
+    document.getElementById('email-registration-step').style.display = 'block';
+    
+    // Pre-llenar email (readonly)
+    document.getElementById('reg-email').value = email;
+    
+    // Enfocar primer campo
+    setTimeout(() => {
+        const nombreInput = document.getElementById('reg-nombre');
+        if (nombreInput) nombreInput.focus();
+    }, 100);
+}
+
+// 🔥 PASO 2: Completar registro con datos completos
+
+async function handleRegistrationSubmit(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('reg-email').value.trim();
+    const nombre = document.getElementById('reg-nombre').value.trim();
+    const apellido = document.getElementById('reg-apellido').value.trim() || null;
+    const edad = document.getElementById('reg-edad').value.trim() || null; // 🔥 Ahora es rango
+    const ocupacion = document.getElementById('reg-ocupacion').value.trim() || null; // 🔥 Ahora es select
+    const pertenece_instituto = document.getElementById('reg-instituto').checked;
+    
+    // 🔥 VALIDACIONES ADICIONALES
+    if (!nombre) {
+        alert('❌ El nombre es requerido');
+        return;
+    }
+    
+    if (nombre.length > 25) {
+        alert('❌ El nombre no puede superar 25 caracteres');
+        return;
+    }
+    
+    if (apellido && apellido.length > 25) {
+        alert('❌ El apellido no puede superar 25 caracteres');
+        return;
+    }
+    
+    // Validar que solo contengan letras y espacios
+    const soloLetras = /^[A-Za-zÀ-ÿ\s]+$/;
+    if (!soloLetras.test(nombre)) {
+        alert('❌ El nombre solo puede contener letras y espacios');
+        return;
+    }
+    
+    if (apellido && !soloLetras.test(apellido)) {
+        alert('❌ El apellido solo puede contener letras y espacios');
+        return;
+    }
+    
+    if (!edad) {
+        alert('❌ Selecciona un rango de edad');
+        return;
+    }
+    
+    if (!ocupacion) {
+        alert('❌ Selecciona una ocupación');
+        return;
+    }
+    
+    // Mostrar loading
+    const form = document.getElementById('email-registration-form');
+    form.style.display = 'none';
+    
+    const loadingDiv = document.createElement('div');
+    loadingDiv.id = 'registration-loading';
+    loadingDiv.style.cssText = 'text-align: center; padding: 20px;';
+    loadingDiv.innerHTML = '<div style="font-size: 14px; color: #667eea;">Creando tu cuenta...</div>';
+    document.getElementById('email-registration-step').appendChild(loadingDiv);
+    
+    try {
+        console.log('📝 Registrando nuevo visitante...');
+        
+        const registrationData = {
+            identificador_sesion: SESSION_ID,
+            email: email,
+            nombre: nombre,
+            apellido: apellido,
+            edad: edad, // 🔥 Ahora guarda el rango
+            ocupacion: ocupacion, // 🔥 Ahora guarda la selección
+            pertenece_instituto: pertenece_instituto,
+            ip_origen: 'unknown',
+            user_agent: CLIENT_INFO.user_agent,
+            dispositivo: CLIENT_INFO.dispositivo,
+            navegador: CLIENT_INFO.navegador,
+            sistema_operativo: CLIENT_INFO.sistema_operativo,
+            canal_acceso: 'widget'
+        };
+        
+        const response = await fetch(`${API_BASE_URL}/visitantes/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(registrationData)
+        });
+        
+        if (!response.ok) {
+            throw new Error('Error creando visitante');
+        }
+        
+        const visitante = await response.json();
+        console.log('✅ Visitante creado:', visitante);
+
+        // Crear conversación en Mongo
+        const conversacionResponse = await fetch(`${API_BASE_URL}/conversaciones/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_id: SESSION_ID,
+                id_visitante: visitante.id_visitante
+            })
+        });
+
+        if (conversacionResponse.ok) {
+            console.log('✅ Conversación creada en Mongo');
+        }
+        
+        // Guardar datos
+        registeredVisitorId = visitante.id_visitante;
+        isEmailVerified = true;
+        
+        try {
+            sessionStorage.setItem('email_verified', 'true');
+            sessionStorage.setItem('visitor_id', registeredVisitorId);
+            localStorage.setItem('visitor_email', email);
+        } catch (e) {
+            console.warn('No se pudo guardar en storage');
+        }
+        
+        // Cerrar modal y mostrar mensaje
+        hideEmailRequiredModal();
+        addBotMessage(`✅ ¡Bienvenido ${nombre}! Tu registro ha sido exitoso. Ahora puedes continuar chateando sin límites.`);
+        
+        // Limpiar formulario
+        form.reset();
+        
+    } catch (error) {
+        console.error('❌ Error en registro:', error);
+        alert('❌ Error al crear tu cuenta. Por favor intenta de nuevo.');
+    } finally {
+        // Limpiar loading
+        const loading = document.getElementById('registration-loading');
+        if (loading) loading.remove();
+        form.style.display = 'block';
+    }
+}
+
+
+
+
+
+function checkMessageLimit() {
+    if (isEmailVerified) {
+        return true;
+    }
+    
+    if (messageCount < MAX_MESSAGES_WITHOUT_EMAIL) {
+        return true;
+    }
+    
+    console.log(`⚠️ Límite alcanzado: ${messageCount}/${MAX_MESSAGES_WITHOUT_EMAIL} mensajes`);
+    return false;
+}
+
+function incrementMessageCount() {
+    messageCount++;
+    
+    try {
+        sessionStorage.setItem('message_count', messageCount.toString());
+    } catch (e) {
+        console.warn('No se pudo guardar contador');
+    }
+    
+    console.log(`📊 Mensajes: ${messageCount}/${MAX_MESSAGES_WITHOUT_EMAIL}`);
 }

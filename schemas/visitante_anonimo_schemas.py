@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
+from pydantic import BaseModel, EmailStr
 
 class VisitanteAnonimoBase(BaseModel):
     identificador_sesion: str = Field(..., min_length=10, max_length=255)
@@ -33,6 +34,17 @@ class VisitanteAnonimoBase(BaseModel):
 
 class VisitanteAnonimoCreate(VisitanteAnonimoBase):
     pass
+
+
+# 🔥 NUEVO SCHEMA para registro por email
+class EmailRegistration(BaseModel):
+    email: EmailStr
+    session_id: str
+    nombre: Optional[str] = None
+    apellido: Optional[str] = None
+    edad: Optional[str] = None
+    ocupacion: Optional[str] = None
+    pertenece_instituto: Optional[bool] = False
 
 class VisitanteAnonimoUpdate(BaseModel):
     ip_origen: Optional[str] = None

@@ -7,6 +7,7 @@ from services.unidad_contenido_service import UnidadContenidoService
 from schemas.unidad_contenido_schemas import UnidadContenidoResponse, UnidadContenidoCreate, UnidadContenidoUpdate
 from exceptions.base import NotFoundException, ValidationException
 from datetime import date
+from rag.rag_service import RAGService
 
 # 🔥 NUEVO: Importar dependencia de autenticación
 from auth.dependencies import get_current_user
@@ -60,9 +61,17 @@ def actualizar_contenido(
     current_user: Usuario = Depends(get_current_user)  # 🔥 Usuario autenticado
 ):
     """Actualiza un contenido existente"""
-    return UnidadContenidoService(db).actualizar_contenido(
+    resultado = UnidadContenidoService(db).actualizar_contenido(
         id_contenido, data, actualizado_por=current_user.id_usuario
     )
+
+    rag = RAGService(db)
+    rag.clear_cache(resultado.id_agente)    
+    rag.reindex_agent(resultado.id_agente)
+
+
+    return resultado
+
 
 @router.post("/{id_contenido}/publicar", response_model=UnidadContenidoResponse)
 def publicar_contenido(
@@ -71,9 +80,16 @@ def publicar_contenido(
     current_user: Usuario = Depends(get_current_user)  # 🔥 Usuario autenticado
 ):
     """Publica un contenido (cambia estado a activo)"""
-    return UnidadContenidoService(db).publicar_contenido(
+    resultado = UnidadContenidoService(db).publicar_contenido(
         id_contenido, publicado_por=current_user.id_usuario
     )
+
+    rag = RAGService(db)
+    rag.clear_cache(resultado.id_agente)   
+    rag.reindex_agent(resultado.id_agente)
+
+    return resultado
+
 
 @router.delete("/{id_contenido}")
 def eliminar_contenido(
@@ -95,6 +111,12 @@ def eliminar_contenido(
             eliminado_por=current_user.id_usuario,  # 🔥 ID real del usuario autenticado
             hard_delete=hard_delete
         )
+        if not hard_delete:
+            rag = RAGService(db)
+            
+            rag.reindex_agent(resultado["id_agente"])
+            rag.clear_cache(resultado["id_agente"])
+
         return resultado
     except NotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -114,6 +136,11 @@ def restaurar_contenido(
     
     try:
         contenido = service.restaurar_contenido(id_contenido)
+
+        rag = RAGService(db)
+        
+        rag.reindex_agent(contenido.id_agente)
+        rag.clear_cache(contenido.id_agente)
         return contenido
     except NotFoundException as e:
         raise HTTPException(status_code=404, detail=str(e))

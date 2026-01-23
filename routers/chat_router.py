@@ -109,54 +109,61 @@ async def chat_with_agent_stream(
         try:
 
             # ============================================
-            # 🔥 PASO -1: ASEGURAR QUE EXISTE CONVERSACIÓN (ANTES DE TODO)
+            # 🔥 PASO -1: VERIFICAR SI HAY VISITANTE REGISTRADO
             # ============================================
+            visitante_registrado = False
+            id_visitante = None
+
             try:
-                # Obtener agente
-                agente = db.query(AgenteVirtual).filter(
-                    AgenteVirtual.id_agente == payload.agent_id
-                ).first()
-                
-                if not agente:
-                    yield {
-                        "type": "error",
-                        "content": f"Agente {payload.agent_id} no encontrado"
-                    }
+                from services.visitante_anonimo_service import VisitanteAnonimoService
+                visitante_service = VisitanteAnonimoService(db)
+                visitante = visitante_service.obtener_por_sesion(payload.session_id)
+                visitante_registrado = True
+                id_visitante = visitante.id_visitante
+                logger.info(f"✅ Visitante registrado encontrado: {id_visitante}")
+            except:
+                logger.info(f"⚠️ No hay visitante registrado (primeros 3 mensajes)")
+                visitante_registrado = False
+
+            # Solo crear conversación SI hay visitante registrado
+            if visitante_registrado:
+                try:
+                    # Obtener agente
+                    agente = db.query(AgenteVirtual).filter(
+                        AgenteVirtual.id_agente == payload.agent_id
+                    ).first()
+                    
+                    if not agente:
+                        yield f"data: {safe_json_dumps({'type': 'error', 'content': f'Agente {payload.agent_id} no encontrado'})}\n\n"
+                        return
+                    
+                    # Verificar si ya existe conversación
+                    conversation = await ConversationService.get_conversation_by_session(payload.session_id)
+                    
+                    if not conversation:
+                        logger.info(f"📝 Creando conversación para visitante {id_visitante}")
+                        
+                        conversation_data = ConversationCreate(
+                            session_id=payload.session_id,
+                            id_agente=payload.agent_id,
+                            agent_name=agente.nombre_agente,
+                            agent_type=agente.tipo_agente,
+                            id_visitante=id_visitante,  # 🔥 Ahora sí asignar
+                            origin=payload.origin,
+                            ip_origen=ip_origen,
+                            user_agent=user_agent
+                        )
+                        conversation = await ConversationService.create_conversation(conversation_data)
+                        logger.info(f"✅ Conversación creada: {conversation.id}")
+                    else:
+                        logger.info(f"✅ Conversación existente: {conversation.id}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error con conversación: {e}")
+                    yield f"data: {safe_json_dumps({'type': 'error', 'content': f'Error iniciando conversación: {str(e)}'})}\n\n"
                     return
-                
-                # Verificar si ya existe conversación
-                conversation = await ConversationService.get_conversation_by_session(payload.session_id)
-                
-                if not conversation:
-                    logger.info(f"📝 Creando conversación para nueva sesión: {payload.session_id}")
-                    
-                    # Crear conversación
-                    conversation_data = ConversationCreate(
-                        session_id=payload.session_id,
-                        id_agente=payload.agent_id,
-                        agent_name=agente.nombre_agente,
-                        agent_type=agente.tipo_agente,
-                        id_visitante=None,  # Se asignará después
-                        origin=payload.origin,
-                        ip_origen=ip_origen,
-                        user_agent=user_agent
-                    )
-                    conversation = await ConversationService.create_conversation(conversation_data)
-                    logger.info(f"✅ Conversación creada: {conversation.id}")
-                else:
-                    logger.info(f"✅ Conversación existente encontrada: {conversation.id}")
-                    
-            except Exception as e:
-                logger.error(f"❌ Error asegurando conversación: {e}")
-                yield {
-                    "type": "error",
-                    "content": f"Error iniciando conversación: {str(e)}"
-                }
-                return
-        
-
-
-
+            else:
+                logger.info(f"⏭️ Sin visitante registrado, NO se creará conversación aún")
 
 
 
@@ -313,6 +320,7 @@ Por favor responde claramente:
                 dispositivo=dispositivo,
                 navegador=navegador,
                 sistema_operativo=sistema_operativo,
+                guardar_en_bd=visitante_registrado,
                 k=payload.k,
                 use_reranking=payload.use_reranking,
                 temperatura=payload.temperatura,

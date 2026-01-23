@@ -478,3 +478,92 @@ class ConversationService:
             session_id=session_id,
             update_data=update_data
         )
+    
+    @staticmethod
+    async def obtener_o_crear_conversacion_activa(
+        session_id: str,
+        id_agente: int,
+        agent_name: str,
+        agent_type: Optional[str] = None,
+        id_visitante: Optional[int] = None,
+        origin: str = "web",
+        ip_origen: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> ConversationResponse:
+        """
+        🔥 NUEVA FUNCIÓN:
+        Obtener conversación activa o crear nueva si:
+        - No existe conversación
+        - La conversación existente está finalizada/abandonada
+        
+        Args:
+            session_id: ID de la sesión
+            id_agente: ID del agente
+            agent_name: Nombre del agente
+            agent_type: Tipo de agente
+            id_visitante: ID del visitante
+            origin: Origen de la conversación
+            ip_origen: IP del cliente
+            user_agent: User agent del navegador
+            
+        Returns:
+            ConversationResponse (existente activa o nueva)
+        """
+        try:
+            collection = await get_conversations_collection()
+            
+            # 🔥 PASO 1: Buscar conversación existente
+            conversation = await collection.find_one({"session_id": session_id})
+            
+            if conversation:
+                estado = conversation.get("metadata", {}).get("estado")
+                
+                # 🔥 PASO 2: Verificar si está activa
+                if estado == "activa":
+                    logger.info(f"✅ Conversación activa encontrada: {session_id}")
+                    conversation["id"] = str(conversation.pop("_id"))
+                    return ConversationResponse(**conversation)
+                
+                else:
+                    # 🔥 PASO 3: Conversación finalizada → Crear nueva
+                    logger.info(f"🔄 Conversación {session_id} está {estado}, creando nueva...")
+                    
+                    # Crear nueva conversación con nuevo session_id
+                    from datetime import datetime
+                    import uuid
+                    
+                    nuevo_session_id = f"{session_id}-{int(datetime.utcnow().timestamp())}"
+                    
+                    conversation_data = ConversationCreate(
+                        session_id=nuevo_session_id,
+                        id_agente=id_agente,
+                        agent_name=agent_name,
+                        agent_type=agent_type,
+                        id_visitante=id_visitante,
+                        origin=origin,
+                        ip_origen=ip_origen,
+                        user_agent=user_agent
+                    )
+                    
+                    return await ConversationService.create_conversation(conversation_data)
+            
+            else:
+                # 🔥 PASO 4: No existe conversación → Crear nueva
+                logger.info(f"📝 No existe conversación para {session_id}, creando nueva...")
+                
+                conversation_data = ConversationCreate(
+                    session_id=session_id,
+                    id_agente=id_agente,
+                    agent_name=agent_name,
+                    agent_type=agent_type,
+                    id_visitante=id_visitante,
+                    origin=origin,
+                    ip_origen=ip_origen,
+                    user_agent=user_agent
+                )
+                
+                return await ConversationService.create_conversation(conversation_data)
+                
+        except Exception as e:
+            logger.error(f"❌ Error en obtener_o_crear_conversacion_activa: {e}")
+            raise

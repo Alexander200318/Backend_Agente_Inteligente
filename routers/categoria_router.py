@@ -10,7 +10,8 @@ from schemas.categoria_schemas import (
     CategoriaUpdate,
 )
 from auth.dependencies import get_current_user
-from models.usuario import Usuario  
+from models.usuario import Usuario
+from rag.rag_service import RAGService  
 
 router = APIRouter(
     prefix="/categorias",
@@ -112,11 +113,18 @@ def actualizar_categoria(
     Permite actualizar el campo 'eliminado' para restaurar o eliminar lógicamente.
     """
     data_dict = data.dict(exclude_unset=True)
-    
-    return CategoriaService(db).actualizar_categoria_con_usuario(
+
+    resultado = CategoriaService(db).actualizar_categoria_con_usuario(
         id_categoria=id_categoria,
         data=data_dict
     )
+
+    # 🔥 REINDEX DESPUÉS DE ACTUALIZAR
+    rag = RAGService(db)
+    rag.clear_cache(resultado.id_agente)
+    rag.reindex_agent(resultado.id_agente)
+
+    return resultado
 
 # ======================================================
 # 🔹 Eliminar categoría (ELIMINADO LÓGICO)
@@ -187,3 +195,52 @@ def listar_todas_admin(
         id_agente=id_agente,
         incluir_eliminados=True  # ✅ Incluye eliminadas
     )
+
+
+# ======================================================
+# 🔥 NUEVO: Desactivar categoría EN CASCADA
+# ======================================================
+@router.post(
+    "/{id_categoria}/desactivar-cascada",
+    status_code=status.HTTP_200_OK
+)
+def desactivar_categoria_cascada(
+    id_categoria: int,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Desactiva una categoría y TODA su jerarquía:
+    - La categoría misma
+    - Todas las subcategorías (recursivamente)
+    - Todo el contenido asociado
+    - Actualiza vectores en ChromaDB    
+    
+    ⚠️ Esta acción afecta a TODA la jerarquía descendente
+    """
+    resultado = CategoriaService(db).desactivar_categoria_cascada(id_categoria)
+    return resultado
+
+
+# ======================================================
+# 🔥 NUEVO: Activar categoría EN CASCADA
+# ======================================================
+@router.post(
+    "/{id_categoria}/activar-cascada",
+    status_code=status.HTTP_200_OK
+)
+def activar_categoria_cascada(
+    id_categoria: int,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Activa una categoría y TODA su jerarquía:
+    - La categoría misma
+    - Todas las subcategorías (recursivamente)
+    - Todo el contenido asociado
+    - Actualiza vectores en ChromaDB
+    """
+    resultado = CategoriaService(db).activar_categoria_cascada(id_categoria)
+
+    return resultado

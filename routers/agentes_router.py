@@ -48,3 +48,43 @@ def get_agent_welcome(id_agente: int, db: Session = Depends(get_db)):
         "agente_id": id_agente,
         "agente_nombre": agente.nombre_agente
     }
+
+# Agregar en routes/agentes_router.py
+
+@router.post("/reindex-all")
+def reindex_all_agents(db: Session = Depends(get_db)):
+    """
+    Re-indexa TODOS los agentes del sistema
+    Útil después de actualizar la estructura de metadata
+    """
+    from models.agente_virtual import AgenteVirtual
+    
+    agentes = db.query(AgenteVirtual).filter(
+        AgenteVirtual.activo == True
+    ).all()
+    
+    rag = RAGService(db)
+    resultados = []
+    
+    for agente in agentes:
+        try:
+            resultado = rag.reindex_agent(agente.id_agente)
+            resultados.append({
+                "id_agente": agente.id_agente,
+                "nombre": agente.nombre_agente,
+                "status": "✅ OK",
+                "total_docs": resultado.get("total_docs", 0)
+            })
+        except Exception as e:
+            resultados.append({
+                "id_agente": agente.id_agente,
+                "nombre": agente.nombre_agente,
+                "status": "❌ ERROR",
+                "error": str(e)
+            })
+    
+    return {
+        "ok": True,
+        "total_agentes": len(agentes),
+        "resultados": resultados
+    }

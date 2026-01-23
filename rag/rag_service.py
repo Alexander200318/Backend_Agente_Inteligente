@@ -153,7 +153,8 @@ class RAGService:
         n_results: int = 3,
         use_reranking: bool = False,
         use_priority_boost: bool = True,
-        priority_boost_factor: float = 0.05
+        priority_boost_factor: float = 0.05,
+        incluir_inactivos: bool = False  # 🔥 NUEVO parámetro
     ) -> List[Dict]:
         """
         Busca documentos relevantes con caché Redis y boost de prioridad
@@ -172,7 +173,27 @@ class RAGService:
         q_emb = self._get_cached_embedding(query, session_id)
         
         initial_results = n_results * 3 if use_reranking else n_results
-        res = collection.query(query_embeddings=[q_emb], n_results=initial_results)
+
+        # 🔥 FILTROS con sintaxis correcta de ChromaDB
+        where_filter = None
+
+        if not incluir_inactivos:
+            # Filtrar: tipo = unidad_contenido AND activo = True
+            where_filter = {
+                "$and": [
+                    {"tipo": "unidad_contenido"},
+                    {"activo": True}
+                ]
+            }
+        else:
+            # Solo filtrar por tipo (permite activos e inactivos)
+            where_filter = {"tipo": "unidad_contenido"}
+
+        res = collection.query(
+            query_embeddings=[q_emb], 
+            n_results=initial_results,
+            where=where_filter
+        )
         
         if not res:
             return []
@@ -319,17 +340,27 @@ class RAGService:
         name = self._collection_name(id_agente)
         return self.chroma.get_or_create_collection(name)
 
+
+
     def ingest_unidad(self, unidad: UnidadContenido, categoria: Categoria):
         """Indexa UNA unidad de contenido"""
         id_agente = categoria.id_agente
         collection = self.create_collection_if_missing(id_agente)
 
         doc_text = self._format_document(unidad, categoria)
-        
         emb = self._get_cached_embedding(doc_text)
         doc_id = f"unidad_{unidad.id_contenido}"
 
-        collection.upsert(
+        # 🔥 PRIMERO: Intentar eliminar vector viejo (si existe)
+        try:
+            collection.delete(ids=[doc_id])
+            print(f"🗑️ Vector anterior eliminado: {doc_id}")
+        except Exception as e:
+            # No hay problema si no existe
+            pass
+
+        # 🔥 SEGUNDO: Crear nuevo vector
+        collection.add(  # ← Usar add() en lugar de upsert()
             ids=[doc_id],
             documents=[doc_text],
             embeddings=[emb],
@@ -338,13 +369,19 @@ class RAGService:
                 "id_contenido": unidad.id_contenido,
                 "id_categoria": unidad.id_categoria,
                 "titulo": unidad.titulo,
-                "prioridad": unidad.prioridad
+                "prioridad": unidad.prioridad,
+                "activo": (
+                    unidad.estado in ["publicado", "activo"] and
+                    not unidad.eliminado
+                )
             }]
         )
         
         self.clear_cache(id_agente)
         
         return {"ok": True, "id": doc_id}
+    
+    
 
     def ingest_categoria(self, categoria: Categoria):
         """Indexa una categoría"""
@@ -362,7 +399,8 @@ class RAGService:
             embeddings=[emb],
             metadatas=[{
                 "tipo": "categoria",
-                "id_categoria": categoria.id_categoria
+                "id_categoria": categoria.id_categoria,
+                "activo": categoria.activo and not categoria.eliminado  # 🔥 AGREGAR ESTA LÍNEA
             }]
         )
         
@@ -379,37 +417,40 @@ class RAGService:
         print(f"🔄 Limpiando caché del agente {id_agente}...")
         self.clear_cache(id_agente)
         
-        collection = self.create_collection_if_missing(id_agente)
-
-        # Borrar colección y recrear
-        try:
-            self.chroma.client.delete_collection(name=collection.name)
-        except Exception:
-            pass
-        collection = self.create_collection_if_missing(id_agente)
-
+        # 🔥 PRIMERO: Obtener categorías ACTIVAS
         categorias = self.db.query(Categoria).filter(
             Categoria.id_agente == id_agente,
-            Categoria.activo == True
+            Categoria.activo == True,
+            Categoria.eliminado == False  # 🔥 IMPORTANTE
         ).all()
+
+        # 🔥 SEGUNDO: Borrar colección COMPLETA (elimina vectores viejos)
+        collection_name = self._collection_name(id_agente)
+        try:
+            self.chroma.client.delete_collection(name=collection_name)
+            print(f"🗑️  Colección {collection_name} eliminada")
+        except Exception as e:
+            print(f"⚠️  No había colección previa: {e}")
+        
+        # 🔥 TERCERO: Recrear colección vacía
+        collection = self.create_collection_if_missing(id_agente)
 
         docs = []
         metadatas = []
         ids = []
 
-        for cat in categorias:
-            text_cat = f"Categoria: {cat.nombre}\nDescripcion: {cat.descripcion or ''}"
-            docs.append(text_cat)
-            metadatas.append({
-                "tipo": "categoria", 
-                "id_categoria": cat.id_categoria,
-                "prioridad": 5
-            })
-            ids.append(str(uuid.uuid4()))
 
+        for cat in categorias:
+            # ❌ YA NO INDEXAR LA CATEGORÍA
+            # text_cat = f"Categoria: {cat.nombre}..."
+            # docs.append(text_cat)
+            # ...
+            
+            # ✅ SOLO indexar contenidos ACTIVOS de esta categoría
             unidades = self.db.query(UnidadContenido).filter(
                 UnidadContenido.id_categoria == cat.id_categoria,
-                UnidadContenido.estado.in_(["publicado", "activo"])
+                UnidadContenido.estado.in_(["publicado", "activo"]),
+                UnidadContenido.eliminado == False
             ).all()
 
             for u in unidades:
@@ -420,7 +461,8 @@ class RAGService:
                     "id_contenido": u.id_contenido,
                     "id_categoria": u.id_categoria,
                     "titulo": u.titulo,
-                    "prioridad": u.prioridad
+                    "prioridad": u.prioridad,
+                    "activo": True  # 🔥 Solo contenidos activos
                 })
                 ids.append(str(uuid.uuid4()))
 
@@ -432,6 +474,9 @@ class RAGService:
                 metadatas=metadatas, 
                 ids=ids
             )
+            print(f"✅ {len(docs)} documentos indexados")
+        else:
+            print("⚠️  No hay documentos para indexar")
 
         return {
             "ok": True, 
@@ -441,20 +486,48 @@ class RAGService:
         }
     
     def _format_document(self, unidad: UnidadContenido, categoria: Categoria) -> str:
+        """
+        Formatea documento con jerarquía de categorías optimizada
+        """
+        # 1. Construir ruta completa
+        path_full = self._build_categoria_path(categoria)
+        path_parts = path_full.split(" > ")
+        
+        # 2. Datos del documento
         title = unidad.titulo or ""
         resumen = getattr(unidad, "resumen", "") or ""
         contenido = unidad.contenido or ""
         keywords = getattr(unidad, "palabras_clave", "") or ""
-        path = self._build_categoria_path(categoria)
-
-        parts = [
-            f"CategoriaPath: {path}",
-            f"Titulo: {title}",
-            f"Resumen: {resumen}",
-            f"Contenido: {contenido}",
-            f"PalabrasClave: {keywords}",
+        
+        # 3. Construir encabezado con jerarquía enfatizada
+        categoria_especifica = path_parts[-1] if path_parts else categoria.nombre
+        
+        header_parts = [
+            f"RUTA: {path_full}",
+            f"CATEGORÍA: {categoria_especifica}",
+            f"TEMA: {categoria_especifica}",
+            f"CLASIFICACIÓN: {categoria_especifica}",
         ]
-        return "\n\n".join([p for p in parts if p])
+        
+        # Agregar niveles superiores si existen
+        if len(path_parts) > 1:
+            header_parts.append(f"ÁREA: {path_parts[0]}")
+        
+        if len(path_parts) > 2:
+            header_parts.append(f"SECCIÓN: {path_parts[-2]}")
+        
+        # 4. Construir documento final
+        parts = [
+            *header_parts,
+            "",
+            f"Título: {title}",
+            f"Resumen: {resumen}",
+            f"Palabras clave: {keywords}",
+            "",
+            f"Contenido: {contenido}"
+        ]
+        
+        return "\n".join([p for p in parts if p])
 
     def _build_categoria_path(self, categoria: Categoria) -> str:
         path = categoria.nombre
@@ -489,3 +562,145 @@ class RAGService:
         except Exception as e:
             print(f"❌ Error eliminando de ChromaDB: {e}")
             return {"ok": False, "error": str(e)}
+        
+
+
+    def desactivar_categoria_cascada_vectores(
+        self, 
+        ids_categorias: List[int], 
+        id_agente: int
+    ) -> dict:
+        """
+        Desactiva vectores de categorías y sus contenidos en ChromaDB
+        """
+        collection = self.create_collection_if_missing(id_agente)
+        
+        try:
+            vectores_actualizados = 0
+            
+            # 1. Desactivar vectores de categorías
+            for id_cat in ids_categorias:
+                doc_id = f"categoria_{id_cat}"
+                try:
+                    result = collection.get(ids=[doc_id])
+                    if result and result['ids']:
+                        metadata = result['metadatas'][0]
+                        metadata['activo'] = False
+                        
+                        collection.upsert(
+                            ids=[doc_id],
+                            documents=result['documents'],
+                            embeddings=result['embeddings'],
+                            metadatas=[metadata]
+                        )
+                        vectores_actualizados += 1
+                except Exception as e:
+                    print(f"⚠️ Error desactivando categoría {id_cat}: {e}")
+            
+            # 2. Desactivar vectores de contenidos
+            # Obtener todos los vectores del agente
+            all_docs = collection.get()
+            
+            for i, metadata in enumerate(all_docs['metadatas']):
+                if (metadata.get('tipo') == 'unidad_contenido' and 
+                    metadata.get('id_categoria') in ids_categorias):
+                    
+                    doc_id = all_docs['ids'][i]
+                    try:
+                        metadata['activo'] = False
+                        
+                        collection.upsert(
+                            ids=[doc_id],
+                            documents=[all_docs['documents'][i]],
+                            embeddings=[all_docs['embeddings'][i]],
+                            metadatas=[metadata]
+                        )
+                        vectores_actualizados += 1
+                    except Exception as e:
+                        print(f"⚠️ Error desactivando contenido {doc_id}: {e}")
+            
+            # Limpiar caché
+            self.clear_cache(id_agente)
+            
+            return {
+                "ok": True,
+                "vectores_actualizados": vectores_actualizados,
+                "categorias_procesadas": len(ids_categorias)
+            }
+            
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": str(e),
+                "vectores_actualizados": 0
+            }
+
+
+    def activar_categoria_cascada_vectores(
+        self, 
+        ids_categorias: List[int], 
+        id_agente: int
+    ) -> dict:
+        """
+        Activa vectores de categorías y sus contenidos en ChromaDB
+        """
+        collection = self.create_collection_if_missing(id_agente)
+        
+        try:
+            vectores_actualizados = 0
+            
+            # 1. Activar vectores de categorías
+            for id_cat in ids_categorias:
+                doc_id = f"categoria_{id_cat}"
+                try:
+                    result = collection.get(ids=[doc_id])
+                    if result and result['ids']:
+                        metadata = result['metadatas'][0]
+                        metadata['activo'] = True
+                        
+                        collection.upsert(
+                            ids=[doc_id],
+                            documents=result['documents'],
+                            embeddings=result['embeddings'],
+                            metadatas=[metadata]
+                        )
+                        vectores_actualizados += 1
+                except Exception as e:
+                    print(f"⚠️ Error activando categoría {id_cat}: {e}")
+            
+            # 2. Activar vectores de contenidos
+            all_docs = collection.get()
+            
+            for i, metadata in enumerate(all_docs['metadatas']):
+                if (metadata.get('tipo') == 'unidad_contenido' and 
+                    metadata.get('id_categoria') in ids_categorias):
+                    
+                    doc_id = all_docs['ids'][i]
+                    try:
+                        metadata['activo'] = True
+                        
+                        collection.upsert(
+                            ids=[doc_id],
+                            documents=[all_docs['documents'][i]],
+                            embeddings=[all_docs['embeddings'][i]],
+                            metadatas=[metadata]
+                        )
+                        vectores_actualizados += 1
+                    except Exception as e:
+                        print(f"⚠️ Error activando contenido {doc_id}: {e}")
+            
+            # Limpiar caché
+            self.clear_cache(id_agente)
+            
+            return {
+                "ok": True,
+                "vectores_actualizados": vectores_actualizados,
+                "categorias_procesadas": len(ids_categorias)
+            }
+            
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": str(e),
+                "vectores_actualizados": 0
+        }

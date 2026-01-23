@@ -9,7 +9,7 @@ from repositories.categoria_repo import (
 from rag.rag_service import RAGService
 from models.categoria import Categoria
 from models.unidad_contenido import UnidadContenido
-from exceptions.base import ValidationException
+from exceptions.base import ValidationException, NotFoundException
 
 
 class CategoriaService:
@@ -254,4 +254,158 @@ class CategoriaService:
                 "total": subcategorias_activas + subcategorias_eliminadas
             },
             "puede_eliminarse": contenidos_activos == 0 and subcategorias_activas == 0
+        }
+
+    # ============================================
+    # 🔥 NUEVO: Desactivar categoría EN CASCADA
+    # ============================================
+    def desactivar_categoria_cascada(self, id_categoria: int) -> dict:
+        """
+        Desactiva una categoría y TODA su jerarquía descendente:
+        - La categoría misma
+        - Todas sus subcategorías (recursivamente)
+        - Todo el contenido asociado a ella y sus hijas
+        - Actualiza vectores en ChromaDB
+        """
+        categoria = self.repo.get_by_id(id_categoria)
+        if not categoria:
+            raise NotFoundException(f"Categoría {id_categoria} no encontrada")
+        
+        id_agente = categoria.id_agente
+        # 1. Obtener TODAS las categorías hijas (recursivamente)
+        categorias_a_desactivar = self._obtener_jerarquia_completa(id_categoria)
+        ids_categorias = [cat.id_categoria for cat in categorias_a_desactivar]
+        
+        # 2. Desactivar todas las categorías en BD
+        categorias_desactivadas = 0
+        for cat in categorias_a_desactivar:
+            cat.activo = False
+            categorias_desactivadas += 1
+        
+        # 3. Desactivar todo el contenido de estas categorías
+        from models.unidad_contenido import UnidadContenido
+        
+        contenidos = self.db.query(UnidadContenido).filter(
+            UnidadContenido.id_categoria.in_(ids_categorias),
+            UnidadContenido.eliminado == False
+        ).all()
+        
+        contenidos_desactivados = 0
+        for contenido in contenidos:
+            contenido.estado = "inactivo"
+            contenidos_desactivados += 1
+        
+        self.db.commit()
+
+        # 🔥 NUEVA instancia de RAGService después del commit
+        rag_fresh = RAGService(self.db)
+        rag_fresh.clear_cache(id_agente)
+
+        try:
+            resultado = rag_fresh.reindex_agent(id_agente)
+            resultado_rag = {
+                "ok": True,
+                "reindexado": True,
+                "total_docs": resultado.get("total_docs")
+            }
+            rag_fresh.reindex_agent(id_agente)
+        except Exception as e:
+            print(f"⚠️ Error reindexando: {e}")
+            resultado_rag = {"ok": False, "error": str(e)}
+
+        return {
+            "ok": True,
+            "categoria_principal": categoria.nombre,
+            "categorias_desactivadas": categorias_desactivadas,
+            "contenidos_desactivados": contenidos_desactivados,
+            "ids_categorias_afectadas": ids_categorias,
+            "vectores_chromadb": resultado_rag
+        }
+
+
+    def _obtener_jerarquia_completa(self, id_categoria: int) -> List[Categoria]:
+        """
+        Obtiene una categoría y TODAS sus descendientes (recursivamente)
+        """
+        categoria = self.repo.get_by_id(id_categoria)
+        if not categoria:
+            return []
+        
+        resultado = [categoria]
+        
+        # Obtener subcategorías directas
+        subcategorias = self.db.query(Categoria).filter(
+            Categoria.id_categoria_padre == id_categoria,
+            Categoria.eliminado == False
+        ).all()
+        
+        # Recursivamente obtener descendientes de cada subcategoría
+        for sub in subcategorias:
+            resultado.extend(self._obtener_jerarquia_completa(sub.id_categoria))
+        
+        return resultado
+
+
+    # ============================================
+    # 🔥 NUEVO: Activar categoría EN CASCADA
+    # ============================================
+    def activar_categoria_cascada(self, id_categoria: int) -> dict:
+        """
+        Activa una categoría y TODA su jerarquía descendente
+        """
+        categoria = self.repo.get_by_id(id_categoria)
+        if not categoria:
+            raise NotFoundException(f"Categoría {id_categoria} no encontrada")
+        
+        # Obtener jerarquía completa
+        categorias_a_activar = self._obtener_jerarquia_completa(id_categoria)
+        ids_categorias = [cat.id_categoria for cat in categorias_a_activar]
+        
+        # Activar categorías
+        categorias_activadas = 0
+        for cat in categorias_a_activar:
+            cat.activo = True
+            categorias_activadas += 1
+        
+        # Activar contenidos
+        from models.unidad_contenido import UnidadContenido
+        
+        contenidos = self.db.query(UnidadContenido).filter(
+            UnidadContenido.id_categoria.in_(ids_categorias),
+            UnidadContenido.eliminado == False
+        ).all()
+        
+        contenidos_activados = 0
+        for contenido in contenidos:
+            contenido.estado = "activo"
+            contenidos_activados += 1
+        
+        self.db.commit()
+
+        id_agente = categoria.id_agente
+
+        # 🔥 NUEVA instancia de RAGService después del commit
+        rag_fresh = RAGService(self.db)
+        rag_fresh.clear_cache(id_agente)
+
+        try:
+            resultado = rag_fresh.reindex_agent(id_agente)
+            resultado_rag = {
+                "ok": True,
+                "reindexado": True,
+                "total_docs": resultado.get("total_docs"),
+            }
+            rag_fresh.reindex_agent(id_agente)
+        except Exception as e:
+            print(f"⚠️ Error reindexando: {e}")
+            resultado_rag = {"ok": False, "error": str(e)}
+
+
+        return {
+            "ok": True,
+            "categoria_principal": categoria.nombre,
+            "categorias_activadas": categorias_activadas,
+            "contenidos_activados": contenidos_activados,
+            "ids_categorias_afectadas": ids_categorias,
+            "vectores_chromadb": resultado_rag
         }

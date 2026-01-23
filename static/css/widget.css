@@ -55,6 +55,7 @@ body {
     pointer-events: none;
     transition: opacity 0.3s, transform 0.3s;
     z-index: 999;
+    overflow: hidden; /* 🔥 AGREGADO */
 }
 
 #chat-container.active {
@@ -72,6 +73,8 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: relative; /* 🔥 NUEVO */
+    z-index: 200; /* 🔥 NUEVO - Mayor que el modal */
 }
 
 #chat-header-info {
@@ -669,4 +672,217 @@ body {
 
 .message.bot.streaming {
     animation: fadeInUp 0.3s ease-out;
+}
+
+/* ==================== MODAL DE DATOS OPCIONALES ==================== */
+
+.visitor-data-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100; /* 🔥 REDUCIDO - debe ser menor que el header */
+    animation: fadeIn 0.3s ease;
+    border-radius: 16px;
+}
+
+.visitor-data-modal.active {
+    display: flex !important; /* 🔥 IMPORTANTE */
+}
+
+.visitor-data-content {
+    background: white;
+    border-radius: 12px;
+    padding: 20px; /* 🔥 Reducido */
+    max-width: 400px; /* 🔥 Reducido */
+    width: 85%; /* 🔥 Reducido */
+    max-height: 70%; /* 🔥 CRÍTICO: Ahora usa 70% del contenedor */
+    overflow-y: auto;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.3s ease;
+}
+
+.visitor-data-header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.visitor-data-header h3 {
+    color: #333;
+    font-size: 22px;
+    margin: 0 0 10px 0;
+}
+
+.visitor-data-header p {
+    color: #666;
+    font-size: 14px;
+    margin: 0;
+}
+
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.form-group label {
+    font-size: 13px;
+    color: #555;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: border-color 0.3s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.checkbox-group label {
+    cursor: pointer;
+    margin: 0;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.btn-submit,
+.btn-skip {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.btn-submit {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+}
+
+.btn-skip {
+    background: #f5f5f5;
+    color: #666;
+}
+
+.btn-skip:hover {
+    background: #e0e0e0;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(30px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+
+
+
+
+/* 🔥 NUEVO: Ajustar scrollbar del modal para que sea más delgada */
+.visitor-data-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.visitor-data-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.visitor-data-content::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+.visitor-data-content::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* 🔥 OPCIONAL: Reducir padding del header del modal para ahorrar espacio */
+.visitor-data-header {
+    text-align: center;
+    margin-bottom: 15px; /* 🔥 REDUCIDO: de 20px a 15px */
+}
+
+.visitor-data-header h3 {
+    color: #333;
+    font-size: 20px; /* 🔥 REDUCIDO: de 22px a 20px */
+    margin: 0 0 8px 0; /* 🔥 REDUCIDO: de 10px a 8px */
+}
+
+.visitor-data-header p {
+    color: #666;
+    font-size: 13px; /* 🔥 REDUCIDO: de 14px a 13px */
+    margin: 0;
+}
+
+/* 🔥 OPCIONAL: Reducir gap entre campos del formulario */
+.visitor-data-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* 🔥 REDUCIDO: de 15px a 12px */
+}
+
+/* 🔥 NUEVO: Ajuste responsive para pantallas pequeñas */
+@media (max-height: 600px) {
+    .visitor-data-content {
+        max-height: 65%; /* Aún más pequeño en pantallas bajas */
+        padding: 15px;
+    }
+    
+    .visitor-data-header h3 {
+        font-size: 18px;
+    }
+    
+    .visitor-data-form {
+        gap: 10px;
+    }
 }

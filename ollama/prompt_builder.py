@@ -26,7 +26,7 @@ def build_system_prompt(agente: AgenteVirtual) -> str:
     
     # 🔥 AGREGAR DESPEDIDA
     if agente.mensaje_despedida:
-        base_prompt += f"""
+        prompt += f"""
 
 **REGLA DE DESPEDIDA:**
 Cuando el usuario se despida usando palabras como: "gracias", "adiós", "chao", "hasta luego", "nos vemos", "bye", "muchas gracias",
@@ -36,21 +36,59 @@ responde ÚNICAMENTE con este mensaje exacto:
 NO agregues nada más después del mensaje de despedida.
 """
     
-    base_prompt += """
+    prompt += """
 
 **Reglas importantes:**
-- NO inventes información que no esté en el CONTEXTO proporcionado
+- Responde ÚNICAMENTE con información del CONTEXTO proporcionado
+- NO uses conocimiento general que no esté en el contexto
 - Si no sabes algo, dilo honestamente
 - Responde de forma clara y concisa
-- Si el CONTEXTO está vacío, indica que no tienes información suficiente
 """
     return prompt.strip()
+
 
 def build_chat_prompt(system_prompt: str, contexto: str, pregunta: str) -> str:
     """
     Construye prompt final para el chat
+    🔥 MODO ESTRICTO: Solo responde con vectores asignados
     """
-    # Verificar si existe el template, si no usar inline
+    
+    # 🔥 VERIFICAR SI HAY CONTEXTO VÁLIDO
+    tiene_contexto = (
+        contexto and 
+        contexto.strip() and 
+        not contexto.startswith("No se encontró información") and
+        not contexto.startswith("Error al buscar")
+    )
+    
+    if not tiene_contexto:
+        # 🔥 SIN CONTEXTO → Forzar mensaje de "no tengo información"
+        return f"""{system_prompt}
+
+---
+
+⚠️ IMPORTANTE: NO hay información disponible en tu base de conocimientos para esta pregunta.
+
+---
+
+**PREGUNTA DEL USUARIO:**
+{pregunta}
+
+---
+
+**INSTRUCCIÓN OBLIGATORIA:**
+Debes responder EXACTAMENTE esto (sin agregar nada más):
+
+"Lo siento, no tengo información específica sobre ese tema en mi base de conocimientos actual. 
+
+¿Puedo ayudarte con algo relacionado a mis áreas de especialidad?"
+
+NO uses conocimiento general.
+NO inventes información.
+SOLO responde el mensaje indicado.
+"""
+    
+    # 🔥 CON CONTEXTO → Usar template normal (si existe) o fallback
     template_path = TEMPLATES_DIR / "chat_prompt_template.txt"
     
     if template_path.exists():
@@ -61,13 +99,13 @@ def build_chat_prompt(system_prompt: str, contexto: str, pregunta: str) -> str:
             pregunta=pregunta
         )
     
-    # Fallback: template inline
+    # 🔥 Fallback: template inline ESTRICTO
     return f"""{system_prompt}
 
 ---
 
-**CONTEXTO RELEVANTE:**
-{contexto if contexto else "No se encontró información específica."}
+**CONTEXTO DISPONIBLE (TODA TU INFORMACIÓN):**
+{contexto}
 
 ---
 
@@ -75,5 +113,12 @@ def build_chat_prompt(system_prompt: str, contexto: str, pregunta: str) -> str:
 {pregunta}
 
 ---
+
+**INSTRUCCIONES CRÍTICAS:**
+1. Responde ÚNICAMENTE usando información del CONTEXTO DISPONIBLE arriba
+2. NO uses conocimiento general que no esté en el contexto
+3. NO inventes datos
+4. Si el contexto no es suficiente para responder completamente, dilo
+5. Cita las fuentes cuando sea posible ("Según la información proporcionada...")
 
 **TU RESPUESTA:**"""
