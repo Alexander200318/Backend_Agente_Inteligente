@@ -286,21 +286,16 @@ class RAGService:
             return
         
         try:
-            if id_agente is None:
-                keys = self.redis.keys("rag:*")
-                if keys:
-                    self.redis.delete(*keys)
-                    print(f"🗑️  {len(keys)} entradas de caché limpiadas")
-                else:
-                    print("ℹ️  No hay entradas en caché")
+            # 🔥 ELIMINAR TODO EL CACHÉ cuando se llama con id_agente
+            # Porque las claves son hashes MD5 sin prefijo identificable
+            all_keys = self.redis.keys("*")
+            
+            if all_keys:
+                self.redis.delete(*all_keys)
+                print(f"🗑️  {len(all_keys)} entradas de caché limpiadas (TODAS)")
             else:
-                pattern = f"rag:{id_agente}:{session_id}:*"
-                keys = self.redis.keys(pattern)
-                if keys:
-                    self.redis.delete(*keys)
-                    print(f"🗑️  {len(keys)} entradas del agente {id_agente} limpiadas")
-                else:
-                    print(f"ℹ️  No hay caché para el agente {id_agente}")
+                print(f"ℹ️  No hay caché")
+                
         except Exception as e:
             print(f"❌ Error limpiando caché: {e}")
 

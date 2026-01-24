@@ -117,12 +117,19 @@ class UnidadContenidoService:
         actualizado_por = self._validar_usuario(actualizado_por)
         contenido = self.repo.update(id_contenido, data, actualizado_por)
         self.db.commit()
-
-        # 🔥 Re-indexar agente completo
+        
+        id_agente = contenido.id_agente
+        
+        # 🔥 NUEVA instancia de RAGService después del commit
         rag_fresh = RAGService(self.db)
-        rag_fresh.reindex_agent(contenido.id_agente)
-        self.rag.clear_cache(contenido.id_agente)
-
+        rag_fresh.clear_cache(id_agente)
+        
+        try:
+            resultado = rag_fresh.reindex_agent(id_agente)
+            print(f"✅ Agente {id_agente} reindexado: {resultado.get('total_docs')} docs")
+        except Exception as e:
+            print(f"⚠️ Error reindexando: {e}")
+        
         return contenido
     
     def publicar_contenido(self, id_contenido: int, publicado_por: Optional[int] = None):
@@ -143,11 +150,19 @@ class UnidadContenidoService:
         data = UnidadContenidoUpdate(estado=nuevo_estado)
         contenido = self.repo.update(id_contenido, data, actualizado_por)
         self.db.commit()
-
-        # 🔥 Re-indexar agente completo
+        
+        id_agente = contenido.id_agente
+        
+        # 🔥 NUEVA instancia de RAGService después del commit
         rag_fresh = RAGService(self.db)
-        rag_fresh.reindex_agent(contenido.id_agente)
-
+        rag_fresh.clear_cache(id_agente)
+        
+        try:
+            resultado = rag_fresh.reindex_agent(id_agente)
+            print(f"✅ Agente {id_agente} reindexado: {resultado.get('total_docs')} docs")
+        except Exception as e:
+            print(f"⚠️ Error reindexando: {e}")
+        
         return contenido
 
     def eliminar_contenido(
@@ -199,60 +214,66 @@ class UnidadContenidoService:
     def desactivar_contenido(self, id_contenido: int) -> dict:
         """
         Desactiva una unidad de contenido específica
-        Reindexa TODO el agente para mantener consistencia
         """
         contenido = self.obtener_por_id(id_contenido)
+        id_agente = contenido.id_agente
         
-        # Cambiar estado
         contenido.estado = "inactivo"
         self.db.commit()
-        id_agente = contenido.id_agente
-
-        # 🔥 Re-indexar agente completo (fuente de verdad)
+        
+        # 🔥 NUEVA instancia de RAGService después del commit
         rag_fresh = RAGService(self.db)
-
-        # 🔥 Limpiar cache Redis
         rag_fresh.clear_cache(id_agente)
-
-        resultado = rag_fresh.reindex_agent(id_agente)
-        rag_fresh.reindex_agent(id_agente)
-
-
+        
+        try:
+            resultado = rag_fresh.reindex_agent(id_agente)
+            resultado_rag = {
+                "ok": True,
+                "reindexado": True,
+                "total_docs": resultado.get("total_docs")
+            }
+        except Exception as e:
+            print(f"⚠️ Error reindexando: {e}")
+            resultado_rag = {"ok": False, "error": str(e)}
+        
         return {
             "ok": True,
             "id_contenido": id_contenido,
             "titulo": contenido.titulo,
             "estado": "inactivo",
-            "reindexado": True,
-            "total_docs": resultado.get("total_docs", 0)
+            "chromadb": resultado_rag
         }
 
 
     def activar_contenido(self, id_contenido: int) -> dict:
         """
         Activa una unidad de contenido específica
-        Reindexa TODO el agente para mantener consistencia
         """
         contenido = self.obtener_por_id(id_contenido)
+        id_agente = contenido.id_agente
         
-        # Cambiar estado
         contenido.estado = "activo"
         self.db.commit()
-        id_agente = contenido.id_agente
-
-        # 🔥 Re-indexar agente completo
+        
+        # 🔥 NUEVA instancia de RAGService después del commit
         rag_fresh = RAGService(self.db)
         rag_fresh.clear_cache(id_agente)
-        resultado = rag_fresh.reindex_agent(id_agente)
-        rag_fresh.reindex_agent(id_agente)
-        # 🔥 Limpiar cache Redis
-
-
+        
+        try:
+            resultado = rag_fresh.reindex_agent(id_agente)
+            resultado_rag = {
+                "ok": True,
+                "reindexado": True,
+                "total_docs": resultado.get("total_docs")
+            }
+        except Exception as e:
+            print(f"⚠️ Error reindexando: {e}")
+            resultado_rag = {"ok": False, "error": str(e)}
+        
         return {
             "ok": True,
             "id_contenido": id_contenido,
             "titulo": contenido.titulo,
             "estado": "activo",
-            "reindexado": True,
-            "total_docs": resultado.get("total_docs", 0)
+            "chromadb": resultado_rag
         }
