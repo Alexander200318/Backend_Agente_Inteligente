@@ -93,7 +93,10 @@ class VisitanteAnonimoRepository:
             visitante = self.get_by_id(id_visitante)
             
             for field, value in visitante_data.dict(exclude_unset=True).items():
-                setattr(visitante, field, value)
+                if value is not None:  # ← Solo actualizar si no es None
+                    setattr(visitante, field, value)
+
+            visitante.ultima_visita = datetime.utcnow()
             
             self.db.commit()
             self.db.refresh(visitante)

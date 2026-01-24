@@ -47,6 +47,7 @@ class EmailRegistration(BaseModel):
     pertenece_instituto: Optional[bool] = False
 
 class VisitanteAnonimoUpdate(BaseModel):
+    identificador_sesion: Optional[str] = None 
     ip_origen: Optional[str] = None
     user_agent: Optional[str] = None
     dispositivo: Optional[str] = None

@@ -297,8 +297,20 @@ class OllamaAgentService:
             # ============================================
             # PASO 1.7: GUARDAR MENSAJE DEL USUARIO
             # ============================================
+
+
+
+            # PASO 1.7: GUARDAR MENSAJE DEL USUARIO
             if guardar_en_bd and conversation:
                 try:
+                    # 🔥 AGREGAR LOG ANTES DE GUARDAR:
+                    logger.info(f"=" * 80)
+                    logger.info(f"📤 GUARDANDO MENSAJE DE USUARIO")
+                    logger.info(f"   - Session ID: {session_id}")
+                    logger.info(f"   - Contenido: {pregunta[:100]}...")
+                    logger.info(f"   - Conversación ID: {conversation.id}")
+                    logger.info(f"=" * 80)
+                    
                     user_message = MessageCreate(
                         role=MessageRole.user,
                         content=pregunta
@@ -310,57 +322,81 @@ class OllamaAgentService:
                         self.visitante_service.incrementar_mensajes(visitante.id_visitante, cantidad=1)
                     
                     logger.info(f"✅ Mensaje usuario guardado en MongoDB")
+                    
                 except Exception as e:
-                    logger.error(f"❌ Error guardando mensaje usuario: {e}")
+                    # 🔥 MEJORAR LOG DE ERROR:
+                    logger.error(f"=" * 80)
+                    logger.error(f"❌ ERROR GUARDANDO MENSAJE USUARIO")
+                    logger.error(f"   - Session ID: {session_id}")
+                    logger.error(f"   - Error: {str(e)}")
+                    logger.error(f"=" * 80)
+                    import traceback
+                    logger.error(traceback.format_exc())
 
             # ============================================
-            # PASO 2: 🔥 DETECTAR ESCALAMIENTO PRIMERO
+            # 🔥 ELIMINAR TODO ESTE BLOQUE:
             # ============================================
-           
-                # ============================================
-                # PASO 4: ESCALAR CONVERSACIÓN
-                # ============================================
-                try:
-                    resultado = await escalamiento_service.escalar_conversacion(
-                        session_id=session_id,
-                        id_agente=id_agente,
-                        motivo="Solicitado por usuario"
-                    )
-                    
-                    # Enviar mensaje de escalamiento
-                    yield {
-                        "type": "escalamiento",
-                        "content": agente.mensaje_derivacion or "Tu solicitud ha sido escalada...",
-                        "metadata": {
-                            "escalado": True,
-                            "usuarios_notificados": resultado.get("usuarios_notificados", 0),
-                            "usuario_nombre": resultado.get("funcionario_asignado", {}).get("nombre"),  # ← AGREGAR
-                            "usuario_id": resultado.get("funcionario_asignado", {}).get("id")  # ← AGREGAR
-                        }
-                    }
-                    
-                    # Finalizar stream
-                    yield {
-                        "type": "done",
-                        "content": agente.mensaje_derivacion or "Escalado a humano",
-                        "metadata": {
-                            "agent_id": id_agente,
-                            "agent_name": agente.nombre_agente,
-                            "session_id": session_id, 
-                            "escalado": True,
-                            "saved_to_mongo": True  # 🔥 Se guardó porque escaló
-                        }
-                    }
-                    
-                    return  # Detener flujo normal
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error en escalamiento: {e}")
-                    yield {
-                        "type": "error",
-                        "content": f"Error al escalar: {str(e)}"
-                    }
-                    return
+            # # 🔥 AGREGAR LOG AQUÍ:
+            # logger.info(f"=" * 80)
+            # logger.info(f"🔍 VERIFICACIÓN POST-GUARDADO")
+            # logger.info(f"   - ¿Se va a escalar? NO (aún no se ha verificado)")
+            # logger.info(f"   - Siguiente paso: Buscar contexto RAG")
+            # logger.info(f"=" * 80)
+            #
+            # # ============================================
+            # # PASO 2: 🔥 DETECTAR ESCALAMIENTO PRIMERO
+            # # ============================================
+            #
+            #     # ============================================
+            #     # PASO 4: ESCALAR CONVERSACIÓN
+            #     # ============================================
+            #     try:
+            #         resultado = await escalamiento_service.escalar_conversacion(
+            #             session_id=session_id,
+            #             id_agente=id_agente,
+            #             motivo="Solicitado por usuario"
+            #         )
+            #         
+            #         # Enviar mensaje de escalamiento
+            #         yield {
+            #             "type": "escalamiento",
+            #             "content": agente.mensaje_derivacion or "Tu solicitud ha sido escalada...",
+            #             "metadata": {
+            #                 "escalado": True,
+            #                 "usuarios_notificados": resultado.get("usuarios_notificados", 0),
+            #                 "usuario_nombre": resultado.get("funcionario_asignado", {}).get("nombre"),
+            #                 "usuario_id": resultado.get("funcionario_asignado", {}).get("id")
+            #             }
+            #         }
+            #         
+            #         # Finalizar stream
+            #         yield {
+            #             "type": "done",
+            #             "content": agente.mensaje_derivacion or "Escalado a humano",
+            #             "metadata": {
+            #                 "agent_id": id_agente,
+            #                 "agent_name": agente.nombre_agente,
+            #                 "session_id": session_id, 
+            #                 "escalado": True,
+            #                 "saved_to_mongo": True
+            #             }
+            #         }
+            #         
+            #         return  # Detener flujo normal
+            #         
+            #     except Exception as e:
+            #         logger.error(f"❌ Error en escalamiento: {e}")
+            #         yield {
+            #             "type": "error",
+            #             "content": f"Error al escalar: {str(e)}"
+            #         }
+            #         return
+            # ============================================
+            # FIN DEL BLOQUE A ELIMINAR
+            # ============================================
+
+
+
 
             # ============================================
             # PASO 5: 🔥 FLUJO NORMAL (SIN GUARDAR EN MONGODB)
@@ -472,6 +508,17 @@ class OllamaAgentService:
                 # ============================================
                 if guardar_en_bd and conversation:
                     try:
+
+                        # 🔥 AGREGAR LOG ANTES DE GUARDAR:
+                        logger.info(f"=" * 80)
+                        logger.info(f"📥 GUARDANDO RESPUESTA DEL AGENTE")
+                        logger.info(f"   - Session ID: {session_id}")
+                        logger.info(f"   - Respuesta (primeros 100 chars): {full_response[:100]}...")
+                        logger.info(f"   - Sources used: {sources_count}")
+                        logger.info(f"   - Model used: {model_name}")
+                        logger.info(f"   - Conversación ID: {conversation.id}")
+                        logger.info(f"=" * 80)
+
                         assistant_message = MessageCreate(
                             role=MessageRole.assistant,
                             content=full_response,
@@ -484,9 +531,22 @@ class OllamaAgentService:
                         if visitante:
                             self.visitante_service.incrementar_mensajes(visitante.id_visitante, cantidad=1)
                         
-                        logger.info(f"✅ Respuesta del agente guardada en MongoDB")
+
+                        logger.info(f"=" * 80)
+                        logger.info(f"✅ RESPUESTA DEL AGENTE GUARDADA")
+                        logger.info(f"   - Session ID: {session_id}")
+                        logger.info(f"   - Longitud respuesta: {len(full_response)} chars")
+                        logger.info(f"=" * 80)
+
                     except Exception as save_error:
-                        logger.error(f"❌ Error guardando respuesta del agente: {save_error}")
+                        # 🔥 MEJORAR LOG DE ERROR:
+                        logger.error(f"=" * 80)
+                        logger.error(f"❌ ERROR GUARDANDO RESPUESTA DEL AGENTE")
+                        logger.error(f"   - Session ID: {session_id}")
+                        logger.error(f"   - Error: {str(save_error)}")
+                        logger.error(f"=" * 80)
+                        import traceback
+                        logger.error(traceback.format_exc())
                 
                 yield {
                     "type": "done",

@@ -1796,11 +1796,11 @@ async function handleRegistrationSubmit(e) {
     const email = document.getElementById('reg-email').value.trim();
     const nombre = document.getElementById('reg-nombre').value.trim();
     const apellido = document.getElementById('reg-apellido').value.trim() || null;
-    const edad = document.getElementById('reg-edad').value.trim() || null; // 🔥 Ahora es rango
-    const ocupacion = document.getElementById('reg-ocupacion').value.trim() || null; // 🔥 Ahora es select
+    const edad = document.getElementById('reg-edad').value.trim() || null;
+    const ocupacion = document.getElementById('reg-ocupacion').value.trim() || null;
     const pertenece_instituto = document.getElementById('reg-instituto').checked;
     
-    // 🔥 VALIDACIONES ADICIONALES
+    // 🔥 VALIDACIONES (mantener todas)
     if (!nombre) {
         alert('❌ El nombre es requerido');
         return;
@@ -1816,7 +1816,6 @@ async function handleRegistrationSubmit(e) {
         return;
     }
     
-    // Validar que solo contengan letras y espacios
     const soloLetras = /^[A-Za-zÀ-ÿ\s]+$/;
     if (!soloLetras.test(nombre)) {
         alert('❌ El nombre solo puede contener letras y espacios');
@@ -1856,8 +1855,8 @@ async function handleRegistrationSubmit(e) {
             email: email,
             nombre: nombre,
             apellido: apellido,
-            edad: edad, // 🔥 Ahora guarda el rango
-            ocupacion: ocupacion, // 🔥 Ahora guarda la selección
+            edad: edad,
+            ocupacion: ocupacion,
             pertenece_instituto: pertenece_instituto,
             ip_origen: 'unknown',
             user_agent: CLIENT_INFO.user_agent,
@@ -1867,6 +1866,7 @@ async function handleRegistrationSubmit(e) {
             canal_acceso: 'widget'
         };
         
+        // ✅ MANTENER: Crear visitante en MySQL
         const response = await fetch(`${API_BASE_URL}/visitantes/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1880,7 +1880,8 @@ async function handleRegistrationSubmit(e) {
         const visitante = await response.json();
         console.log('✅ Visitante creado:', visitante);
 
-        // Crear conversación en Mongo
+        // ❌ ELIMINAR ESTE BLOQUE COMPLETO:
+        /*
         const conversacionResponse = await fetch(`${API_BASE_URL}/conversaciones/`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1893,8 +1894,9 @@ async function handleRegistrationSubmit(e) {
         if (conversacionResponse.ok) {
             console.log('✅ Conversación creada en Mongo');
         }
+        */
         
-        // Guardar datos
+        // ✅ MANTENER: Guardar datos localmente
         registeredVisitorId = visitante.id_visitante;
         isEmailVerified = true;
         
@@ -1906,18 +1908,24 @@ async function handleRegistrationSubmit(e) {
             console.warn('No se pudo guardar en storage');
         }
         
-        // Cerrar modal y mostrar mensaje
+        // ✅ MANTENER: Cerrar modal
         hideEmailRequiredModal();
-        addBotMessage(`✅ ¡Bienvenido ${nombre}! Tu registro ha sido exitoso. Ahora puedes continuar chateando sin límites.`);
         
-        // Limpiar formulario
+        // ✅ MANTENER: Mensaje de bienvenida
+        addBotMessage(`✅ ¡Bienvenido ${nombre}! Tu registro ha sido exitoso.
+
+📝 A partir de ahora, todas tus conversaciones quedarán registradas.
+
+¿En qué más puedo ayudarte?`);
+        
+        // ✅ MANTENER: Limpiar formulario
         form.reset();
         
     } catch (error) {
         console.error('❌ Error en registro:', error);
         alert('❌ Error al crear tu cuenta. Por favor intenta de nuevo.');
     } finally {
-        // Limpiar loading
+        // ✅ MANTENER: Limpiar loading
         const loading = document.getElementById('registration-loading');
         if (loading) loading.remove();
         form.style.display = 'block';

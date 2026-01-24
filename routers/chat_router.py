@@ -125,7 +125,7 @@ async def chat_with_agent_stream(
                 logger.info(f"⚠️ No hay visitante registrado (primeros 3 mensajes)")
                 visitante_registrado = False
 
-            # Solo crear conversación SI hay visitante registrado
+            # Solo crear conversación SI hay visitante registrado# Solo crear conversación SI hay visitante registrado
             if visitante_registrado:
                 try:
                     # Obtener agente
@@ -137,29 +137,124 @@ async def chat_with_agent_stream(
                         yield f"data: {safe_json_dumps({'type': 'error', 'content': f'Agente {payload.agent_id} no encontrado'})}\n\n"
                         return
                     
+                    # 🔥 AGREGAR LOG DE AGENTE:
+                    logger.info(f"🤖 AGENTE SELECCIONADO")
+                    logger.info(f"   - ID: {agente.id_agente}")
+                    logger.info(f"   - Nombre: {agente.nombre_agente}")
+                    logger.info(f"   - Tipo: {agente.tipo_agente}")
+                    logger.info(f"   - Departamento: {agente.id_departamento}")
+        
                     # Verificar si ya existe conversación
                     conversation = await ConversationService.get_conversation_by_session(payload.session_id)
+
+                    # 🔥 AGREGAR LOG DE VERIFICACIÓN:
+                    if conversation:
+                        logger.info(f"=" * 80)
+                        logger.info(f"♻️ CONVERSACIÓN EXISTENTE ENCONTRADA")
+                        logger.info(f"   - MongoDB ID: {conversation.id}")
+                        logger.info(f"   - Session ID: {conversation.session_id}")
+                        logger.info(f"   - ID Visitante: {conversation.id_visitante}")
+                        logger.info(f"   - Total mensajes: {conversation.metadata.total_mensajes}")
+                        logger.info(f"   - Estado: {conversation.metadata.estado}")
+                        logger.info(f"   - Creada: {conversation.created_at}")
+                        logger.info(f"=" * 80)
                     
                     if not conversation:
-                        logger.info(f"📝 Creando conversación para visitante {id_visitante}")
+                        # 🔥 AGREGAR LOG ANTES DE CREAR:
+                        logger.info(f"=" * 80)
+                        logger.info(f"📝 CREANDO NUEVA CONVERSACIÓN")
+                        logger.info(f"   - Session ID: {payload.session_id}")
+                        logger.info(f"   - ID Visitante: {id_visitante}")
+                        logger.info(f"   - ID Agente: {payload.agent_id}")
+                        logger.info(f"   - Nombre Agente: {agente.nombre_agente}")
+                        logger.info(f"   - Tipo Agente: {agente.tipo_agente}")
+                        logger.info(f"   - Origin: {payload.origin}")
+                        logger.info(f"   - IP Origen: {ip_origen}")
+                        logger.info(f"=" * 80)
                         
                         conversation_data = ConversationCreate(
                             session_id=payload.session_id,
                             id_agente=payload.agent_id,
                             agent_name=agente.nombre_agente,
                             agent_type=agente.tipo_agente,
-                            id_visitante=id_visitante,  # 🔥 Ahora sí asignar
+                            id_visitante=id_visitante,
                             origin=payload.origin,
                             ip_origen=ip_origen,
                             user_agent=user_agent
                         )
+
+                        # 🔥 AGREGAR LOG DE DATOS:
+                        logger.info(f"📦 DATOS DE CONVERSACIÓN A CREAR:")
+                        logger.info(f"   {conversation_data.dict()}")
+
                         conversation = await ConversationService.create_conversation(conversation_data)
-                        logger.info(f"✅ Conversación creada: {conversation.id}")
+                        
+                        # 🔥 AGREGAR LOG DESPUÉS DE CREAR:
+                        logger.info(f"=" * 80)
+                        logger.info(f"✅ CONVERSACIÓN MONGODB CREADA EXITOSAMENTE")
+                        logger.info(f"   - MongoDB ID: {conversation.id}")
+                        logger.info(f"   - Session ID: {conversation.session_id}")
+                        logger.info(f"   - ID Visitante: {conversation.id_visitante}")
+                        logger.info(f"   - Estado: {conversation.metadata.estado}")
+                        logger.info(f"=" * 80)
+                        
+                        # 🔥 NUEVO: Crear registro de sincronización en MySQL
+                        try:
+                            from services.conversacion_sync_service import ConversacionSyncService
+                            from schemas.conversacion_sync_schemas import ConversacionSyncCreate
+                            
+                            sync_service = ConversacionSyncService(db)
+
+                            # 🔥 AGREGAR LOG ANTES DE SYNC:
+                            logger.info(f"🔄 CREANDO SINCRONIZACIÓN MYSQL")
+                            logger.info(f"   - MongoDB ID: {str(conversation.id)}")
+                            logger.info(f"   - ID Visitante: {id_visitante}")
+                            logger.info(f"   - ID Agente Inicial: {payload.agent_id}")
+                            
+                            sync_data = ConversacionSyncCreate(
+                                mongodb_conversation_id=str(conversation.id),
+                                id_visitante=id_visitante,
+                                id_agente_inicial=payload.agent_id,
+                                id_agente_actual=payload.agent_id,
+                                estado="activa"
+                            )
+                            
+                            sync_record = sync_service.crear_conversacion(sync_data)
+
+                            # 🔥 AGREGAR LOG DESPUÉS DE SYNC:
+                            logger.info(f"=" * 80)
+                            logger.info(f"✅ SYNC MYSQL CREADO EXITOSAMENTE")
+                            logger.info(f"   - ID Sync: {sync_record.id_conversacion_sync}")
+                            logger.info(f"   - MongoDB ID: {sync_record.mongodb_conversation_id}")
+                            logger.info(f"   - ID Visitante: {sync_record.id_visitante}")
+                            logger.info(f"   - Estado: {sync_record.estado}")
+                            logger.info(f"=" * 80)
+                            
+                        except Exception as sync_error:
+                            # 🔥 MEJORAR LOG DE ERROR:
+                            logger.error(f"=" * 80)
+                            logger.error(f"❌ ERROR CREANDO SYNC MYSQL")
+                            logger.error(f"   - Error: {str(sync_error)}")
+                            logger.error(f"   - Tipo: {type(sync_error).__name__}")
+                            logger.error(f"   - MongoDB ID intentado: {str(conversation.id)}")
+                            logger.error(f"=" * 80)
+                            import traceback
+                            logger.error(traceback.format_exc())
+
                     else:
                         logger.info(f"✅ Conversación existente: {conversation.id}")
                         
                 except Exception as e:
-                    logger.error(f"❌ Error con conversación: {e}")
+                    # 🔥 MEJORAR LOG DE ERROR:
+                    logger.error(f"=" * 80)
+                    logger.error(f"❌ ERROR CRÍTICO EN CREACIÓN DE CONVERSACIÓN")
+                    logger.error(f"   - Session ID: {payload.session_id}")
+                    logger.error(f"   - Error: {str(e)}")
+                    logger.error(f"   - Tipo: {type(e).__name__}")
+                    logger.error(f"=" * 80)
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    
                     yield f"data: {safe_json_dumps({'type': 'error', 'content': f'Error iniciando conversación: {str(e)}'})}\n\n"
                     return
             else:

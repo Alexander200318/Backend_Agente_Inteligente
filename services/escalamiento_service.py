@@ -59,16 +59,50 @@ class EscalamientoService:
         # Cache en memoria para pendientes de confirmación
         self._confirmaciones_pendientes = _confirmaciones_pendientes_global
     
+
     def detectar_intencion_escalamiento(self, mensaje: str) -> bool:
-        """
-        Detecta si el usuario quiere hablar con un humano
-        SIMPLE: solo busca palabras clave
-        """
+        """Detecta si el usuario quiere hablar con un humano"""
         mensaje_lower = mensaje.lower()
         
-        for keyword in self.KEYWORDS_ESCALAMIENTO:
-            if keyword in mensaje_lower:
-                logger.info(f"🔔 Keyword de escalamiento detectado: '{keyword}'")
+        # Frases más específicas
+        frases_escalamiento = [
+            # Directas
+            'hablar con un humano',
+            'hablar con una persona',
+            'quiero hablar con alguien',
+            'quiero un humano',
+            'necesito un humano',
+            'hablar con un asesor',
+            'hablar con un representante',
+            'hablar con soporte',
+            'contactar con alguien',
+            'pasame con alguien',
+
+            # Instituto / académico
+            'hablar con administración',
+            'hablar con secretaría',
+            'hablar con un asesor académico',
+            'hablar con un coordinador',
+            'hablar con un profesor',
+            'hablar con un encargado',
+            'hablar con un tutor',
+
+
+            # Frustración / bot no ayuda
+            'quiero hablar con alguien real',
+            'quiero atención humana',
+
+
+            # Indirectas comunes
+            'necesito ayuda personalizada',
+            'quiero que me atiendan',
+            'necesito hablar con alguien',
+            'quiero soporte'
+        ]
+        
+        for frase in frases_escalamiento:
+            if frase in mensaje_lower:
+                logger.info(f"🔔 Frase de escalamiento detectada: '{frase}'")
                 return True
         
         return False

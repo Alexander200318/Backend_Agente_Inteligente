@@ -162,6 +162,7 @@ class ConversationResponse(BaseModel):
     id: str
     session_id: str
     id_agente: int
+    id_visitante: Optional[int] = None 
     agent_name: str
     messages: List[Message]
     metadata: ConversationMetadata

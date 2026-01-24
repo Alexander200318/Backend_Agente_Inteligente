@@ -25,21 +25,26 @@ class ConversationService:
     Servicio para gestionar conversaciones en MongoDB
     """
     
+
     @staticmethod
     async def create_conversation(
         conversation_data: ConversationCreate
     ) -> ConversationResponse:
-        """
-        Crear una nueva conversación
-        
-        Args:
-            conversation_data: Datos de la conversación a crear
-            
-        Returns:
-            ConversationResponse con la conversación creada
-        """
+        """Crear una nueva conversación"""
         try:
+            # 🔥 AGREGAR LOG AL INICIO:
+            logger.info(f"=" * 80)
+            logger.info(f"🏗️ INICIANDO CREACIÓN EN MONGODB")
+            logger.info(f"   - Session ID: {conversation_data.session_id}")
+            logger.info(f"   - ID Visitante: {conversation_data.id_visitante}")
+            logger.info(f"   - ID Agente: {conversation_data.id_agente}")
+            logger.info(f"   - Agent Name: {conversation_data.agent_name}")
+            logger.info(f"=" * 80)
+            
             collection = await get_conversations_collection()
+            
+            # 🔥 AGREGAR LOG DE COLECCIÓN:
+            logger.info(f"✅ Colección MongoDB obtenida: {collection.name}")
             
             # Crear metadata inicial
             metadata = ConversationMetadata(
@@ -52,6 +57,12 @@ class ConversationService:
                 total_mensajes_usuario=0,
                 total_mensajes_agente=0
             )
+            
+            # 🔥 AGREGAR LOG DE METADATA:
+            logger.info(f"📋 Metadata creada:")
+            logger.info(f"   - Estado: {metadata.estado}")
+            logger.info(f"   - IP: {metadata.ip_origen}")
+            logger.info(f"   - Dispositivo: {metadata.dispositivo}")
             
             # Construir documento de conversación
             conversation = ConversationMongo(
@@ -67,10 +78,20 @@ class ConversationService:
                 updated_at=datetime.utcnow()
             )
             
+            # 🔥 AGREGAR LOG ANTES DE INSERTAR:
+            logger.info(f"📄 Documento a insertar:")
+            logger.info(f"{conversation.dict()}")
+            
             # Insertar en MongoDB
             result = await collection.insert_one(conversation.dict())
             
-            logger.info(f"✅ Conversación creada: session_id={conversation_data.session_id}")
+            # 🔥 AGREGAR LOG DESPUÉS DE INSERTAR:
+            logger.info(f"=" * 80)
+            logger.info(f"✅ DOCUMENTO INSERTADO EN MONGODB")
+            logger.info(f"   - ObjectId: {result.inserted_id}")
+            logger.info(f"   - Session ID: {conversation_data.session_id}")
+            logger.info(f"   - Acknowledged: {result.acknowledged}")
+            logger.info(f"=" * 80)
             
             # Retornar con el ID generado
             return ConversationResponse(
@@ -79,8 +100,18 @@ class ConversationService:
             )
             
         except Exception as e:
-            logger.error(f"❌ Error creando conversación: {e}")
+            # 🔥 MEJORAR LOG DE ERROR:
+            logger.error(f"=" * 80)
+            logger.error(f"❌ ERROR EN CREATE_CONVERSATION")
+            logger.error(f"   - Session ID: {conversation_data.session_id}")
+            logger.error(f"   - Error: {str(e)}")
+            logger.error(f"   - Tipo: {type(e).__name__}")
+            logger.error(f"=" * 80)
+            import traceback
+            logger.error(traceback.format_exc())
             raise
+
+
     
     @staticmethod
     async def get_conversation_by_session(
@@ -117,17 +148,18 @@ class ConversationService:
         session_id: str,
         message_data: MessageCreate
     ) -> ConversationResponse:
-        """
-        Agregar un mensaje a una conversación existente
-        
-        Args:
-            session_id: ID de la sesión
-            message_data: Datos del mensaje a agregar
-            
-        Returns:
-            ConversationResponse actualizada
-        """
+        """Agregar un mensaje a una conversación existente"""
         try:
+            # 🔥 AGREGAR LOG AL INICIO:
+            logger.info(f"=" * 80)
+            logger.info(f"💬 GUARDANDO MENSAJE EN MONGODB")
+            logger.info(f"   - Session ID: {session_id}")
+            logger.info(f"   - Role: {message_data.role}")
+            logger.info(f"   - Contenido (primeros 100 chars): {message_data.content[:100]}...")
+            logger.info(f"   - Sources used: {message_data.sources_used}")
+            logger.info(f"   - Model used: {message_data.model_used}")
+            logger.info(f"=" * 80)
+            
             collection = await get_conversations_collection()
             
             # Crear mensaje
@@ -142,6 +174,12 @@ class ConversationService:
                 user_name=message_data.user_name
             )
             
+            # 🔥 AGREGAR LOG DE MENSAJE:
+            logger.info(f"📝 Mensaje creado:")
+            logger.info(f"   - Role: {message.role}")
+            logger.info(f"   - Timestamp: {message.timestamp}")
+            logger.info(f"   - Content length: {len(message.content)} chars")
+            
             # Actualizar contadores
             update_query = {
                 "$push": {"messages": message.dict()},
@@ -152,31 +190,56 @@ class ConversationService:
             }
             
             # Incrementar contador según el rol
-            # El role ya es string gracias a use_enum_values en Pydantic
             role_str = message_data.role if isinstance(message_data.role, str) else message_data.role.value
             if role_str == "user":
                 update_query["$inc"]["metadata.total_mensajes_usuario"] = 1
             elif role_str in ["assistant", "human_agent"]:
                 update_query["$inc"]["metadata.total_mensajes_agente"] = 1
             
+            # 🔥 AGREGAR LOG DE UPDATE QUERY:
+            logger.info(f"🔄 Update query:")
+            logger.info(f"{update_query}")
+            
             # Actualizar en MongoDB
             result = await collection.find_one_and_update(
                 {"session_id": session_id},
                 update_query,
-                return_document=True  # Retornar documento actualizado
+                return_document=True
             )
             
             if not result:
+                # 🔥 MEJORAR LOG DE ERROR:
+                logger.error(f"=" * 80)
+                logger.error(f"❌ CONVERSACIÓN NO ENCONTRADA")
+                logger.error(f"   - Session ID buscado: {session_id}")
+                logger.error(f"   - Mensaje que se intentaba guardar: {message_data.role}")
+                logger.error(f"=" * 80)
                 raise ValueError(f"Conversación no encontrada: {session_id}")
             
-            logger.info(f"✅ Mensaje agregado a conversación: {session_id}")
+            # 🔥 AGREGAR LOG DE ÉXITO:
+            logger.info(f"=" * 80)
+            logger.info(f"✅ MENSAJE GUARDADO EXITOSAMENTE")
+            logger.info(f"   - Session ID: {session_id}")
+            logger.info(f"   - Total mensajes ahora: {result['metadata']['total_mensajes']}")
+            logger.info(f"   - Mensajes usuario: {result['metadata']['total_mensajes_usuario']}")
+            logger.info(f"   - Mensajes agente: {result['metadata']['total_mensajes_agente']}")
+            logger.info(f"=" * 80)
             
             # Convertir y retornar
             result["id"] = str(result.pop("_id"))
             return ConversationResponse(**result)
             
         except Exception as e:
-            logger.error(f"❌ Error agregando mensaje: {e}")
+            # 🔥 MEJORAR LOG DE ERROR:
+            logger.error(f"=" * 80)
+            logger.error(f"❌ ERROR EN ADD_MESSAGE")
+            logger.error(f"   - Session ID: {session_id}")
+            logger.error(f"   - Role del mensaje: {message_data.role}")
+            logger.error(f"   - Error: {str(e)}")
+            logger.error(f"   - Tipo: {type(e).__name__}")
+            logger.error(f"=" * 80)
+            import traceback
+            logger.error(traceback.format_exc())
             raise
     
     @staticmethod
