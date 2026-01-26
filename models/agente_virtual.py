@@ -64,13 +64,16 @@ class AgenteVirtual(Base):
     # Estado y permisos
     activo = Column(Boolean, default=True, index=True)
     requiere_autenticacion = Column(Boolean, default=False)
-    
+    eliminado = Column(Boolean, default=False, index=True, nullable=False, comment='Soft delete flag')
+
     # Auditoría
     fecha_creacion = Column(DateTime, server_default=func.current_timestamp())
     fecha_actualizacion = Column(DateTime, onupdate=func.current_timestamp())
+    fecha_eliminacion = Column(DateTime, nullable=True, comment='Fecha de eliminación lógica')
     creado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'))
     actualizado_por = Column(Integer, ForeignKey('Usuario.id_usuario', ondelete='SET NULL'))
-    
+    eliminado_por = Column(Integer, nullable=True, comment='Usuario que eliminó el registro')
+
     # Relationships
     departamento = relationship("Departamento", back_populates="agentes")
     categorias = relationship("Categoria", back_populates="agente", cascade="all, delete-orphan")
