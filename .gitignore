@@ -53,4 +53,17 @@ Thumbs.db
 .idea/
 
 /hf_models
+alembic/
+alembic/versions/78e27f59204a_integacion_disponible_en_usuario.py
+alembic/versions/76eeda4463e6_correo_en_visitente_anonimo.py
+alembic/versions/7112d07b7942_update_unidad_contenido_soft_delete_.py
+alembic/versions/4253e8380893_merge_multiple_heads.py
+alembic/versions/37206dc3e7ef_agregar_campos_analitica_a_visitante_.py
+alembic/versions/7112d07b7942_update_unidad_contenido_soft_delete_.py
+alembic/env.py
 
+.expo/
+.expo/README.md
+.expo/settings.json
+alembic/versions/7112d07b7942_update_unidad_contenido_soft_delete_.py
+alembic/env.py
