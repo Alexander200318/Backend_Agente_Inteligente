@@ -1399,6 +1399,34 @@ function connectWebSocket(sessionId) {
                     speakText(data.content);
                 }
                 break;
+                   
+
+            case 'system_message':
+                console.log('🔔 Mensaje de sistema recibido');
+                addBotMessage(data.content);
+                speakText(data.content);
+                break;  // ← SOLO mostrar mensaje, no cerrar WebSocket
+
+            case 'finalizacion_escalamiento':
+                console.log('🔚 Escalamiento finalizado, cerrando WebSocket');
+                
+                addBotMessage(data.content);
+                speakText(data.content);
+                
+                setTimeout(() => {
+                    if (websocket) {
+                        websocket.close();
+                        websocket = null;
+                        isEscalated = false;
+                        humanAgentName = null;
+                        
+                        const indicator = document.getElementById('human-agent-indicator');
+                        if (indicator) indicator.remove();
+                        
+                        console.log('✅ WebSocket cerrado, volviendo a modo chat normal');
+                    }
+                }, 2000);
+                break;
             
             case 'typing':
                 if (data.is_typing) {

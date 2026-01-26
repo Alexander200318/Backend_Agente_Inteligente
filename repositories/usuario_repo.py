@@ -80,7 +80,7 @@ class UsuarioRepository:
         usuario = self.get_by_id(id_usuario)
         
         for key, value in usuario_data.dict(exclude_unset=True).items():
-            if hasattr(usuario, key) and value is not None:
+            if hasattr(usuario, key) and key != "disponible" and value is not None:
                 setattr(usuario, key, value)
         
         usuario.fecha_actualizacion = datetime.now()

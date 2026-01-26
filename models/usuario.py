@@ -71,6 +71,7 @@ class Usuario(Base):
     
     # Self-referential para creado_por
     creador = relationship("Usuario", remote_side=[id_usuario], foreign_keys=[creado_por])
+    disponible = Column(Boolean, default=False)
 
     def __repr__(self):
         return f"<Usuario(id={self.id_usuario}, username='{self.username}', email='{self.email}')>"

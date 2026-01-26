@@ -139,7 +139,72 @@ async def websocket_chat_endpoint(
                     user_name = None
                     user_id = None
                     logger.info(f"💬 Mensaje de usuario widget")
-                
+
+
+
+                # 🔥🔥🔥 AGREGAR TODO ESTE BLOQUE AQUÍ 🔥🔥🔥
+                # ============================================
+                # 🔥 DETECCIÓN DE FINALIZACIÓN DE ESCALAMIENTO
+                # ============================================
+                quiere_finalizar = escalamiento_service.detectar_finalizacion_escalamiento(content)
+
+                if quiere_finalizar:
+                    logger.info(f"🔚 Intención de finalizar escalamiento detectada: '{content}'")
+                    
+                    try:
+                        # Finalizar escalamiento
+                        resultado_finalizacion = await escalamiento_service.finalizar_escalamiento(
+                            session_id=session_id,
+                            motivo="Solicitado por usuario desde WebSocket"
+                        )
+                        
+                        if resultado_finalizacion.get('ok', False):
+                            mensaje_finalizacion = (
+                                "✅ **Escalamiento finalizado**\n\n"
+                                "Has vuelto a chatear con el agente virtual.\n\n"
+                                "Ahora puedes continuar tu conversación normalmente. 😊\n\n"
+                                "**Recuerda:** Desde ahora tus mensajes serán procesados por la IA."
+                            )
+                            
+                            response_message = {
+                                "type": "finalizacion_escalamiento",  # ← Tipo específico
+                                "role": "system",
+                                "content": mensaje_finalizacion,
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
+
+                            await manager.send_personal_message(response_message, websocket)
+                            
+                            logger.info(f"✅ Escalamiento finalizado para session {session_id}")
+                            continue
+
+                            
+                        else:
+                            # ❌ ERROR EN FINALIZACIÓN
+                            error_message = {
+                                "type": "error",
+                                "content": "No se pudo finalizar el escalamiento. Intenta de nuevo.",
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
+                            
+                            await manager.send_personal_message(error_message, websocket)
+                            logger.error(f"❌ Error finalizando escalamiento")
+                            continue
+                            
+                    except Exception as e:
+                        logger.error(f"❌ Error finalizando escalamiento: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                        
+                        error_message = {
+                            "type": "error",
+                            "content": "Error al finalizar escalamiento",
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        
+                        await manager.send_personal_message(error_message, websocket)
+                        continue
+
                 # ============================================
                 # 🔥 GUARDAR EN MONGODB (SIEMPRE)
                 # ============================================

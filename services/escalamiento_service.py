@@ -53,6 +53,20 @@ class EscalamientoService:
         'no', 'nop', 'cancela', 'mejor no', 'no gracias',
         'olvida', 'dejalo', 'espera', 'ahora no'
     ]
+
+    # 🔥🔥🔥 AGREGAR ESTO AQUÍ 🔥🔥🔥
+    KEYWORDS_FINALIZAR_ESCALAMIENTO = [
+        'finalizar escalamiento',
+        'terminar escalamiento',
+        'cancelar escalamiento',
+        'volver al bot',
+        'volver a la ia',
+        'volver al agente virtual',
+        'ya no necesito humano',
+        'cancelar derivación',
+        'cerrar escalamiento',
+        'regresar al bot'
+    ]
     
     def __init__(self, db: Session):
         self.db = db
@@ -131,6 +145,105 @@ class EscalamientoService:
         logger.warning(f"⚠️ Respuesta indefinida: '{mensaje_lower}'")
         return 'indefinido'
     
+    # 🔥🔥🔥 AGREGAR ESTE MÉTODO AQUÍ 🔥🔥🔥
+    def detectar_finalizacion_escalamiento(self, mensaje: str) -> bool:
+        """
+        Detecta si el usuario quiere finalizar el escalamiento
+        y volver al agente IA
+        """
+        mensaje_lower = mensaje.lower().strip()
+        
+        logger.info(f"🔍 Verificando finalización de escalamiento: '{mensaje}'")
+        
+        for keyword in self.KEYWORDS_FINALIZAR_ESCALAMIENTO:
+            if keyword in mensaje_lower:
+                logger.info(f"🔔 Keyword de finalización detectado: '{keyword}'")
+                return True
+        
+        logger.info(f"✅ No se detectó intención de finalizar escalamiento")
+        return False
+
+    # 🔥🔥🔥 AGREGAR ESTE MÉTODO DESPUÉS 🔥🔥🔥
+    async def finalizar_escalamiento(
+        self,
+        session_id: str,
+        motivo: str = "Finalizado por usuario"
+    ) -> Dict[str, Any]:
+        """
+        Finaliza un escalamiento activo y devuelve la conversación al agente IA
+        """
+        try:
+            logger.info(f"=" * 80)
+            logger.info(f"🔚 FINALIZANDO ESCALAMIENTO")
+            logger.info(f"   - Session ID: {session_id}")
+            logger.info(f"   - Motivo: {motivo}")
+            logger.info(f"=" * 80)
+            
+            # 1. Actualizar estado en MongoDB
+            update_finalizar = ConversationUpdate(
+                estado=ConversationStatus.activa,  # Volver a activa
+                requirio_atencion_humana=True  # Mantener que requirió atención
+            )
+            
+            conversacion_actualizada = await ConversationService.update_conversation(
+                session_id,
+                update_finalizar
+            )
+            
+            # 2. Agregar mensaje de sistema en MongoDB
+            mensaje_finalizacion = MessageCreate(
+                role=MessageRole.system,
+                content=f"✅ Escalamiento finalizado. {motivo}. La conversación continúa con el agente virtual."
+            )
+            await ConversationService.add_message(session_id, mensaje_finalizacion)
+            
+            logger.info(f"✅ Estado actualizado en MongoDB: activa")
+            
+            # 3. Actualizar en MySQL (Conversacion_Sync)
+            try:
+                conversacion_sync = self.db.query(ConversacionSync).filter(
+                    ConversacionSync.mongodb_conversation_id == session_id
+                ).first()
+                
+                if conversacion_sync:
+                    conversacion_sync.estado = EstadoConversacionEnum.activa
+                    conversacion_sync.ultima_sincronizacion = datetime.utcnow()
+                    self.db.commit()
+                    
+                    logger.info(f"✅ Estado actualizado en MySQL: activa")
+                else:
+                    logger.warning(f"⚠️ No se encontró ConversacionSync para {session_id}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error actualizando MySQL: {e}")
+                self.db.rollback()
+            
+            logger.info(f"=" * 80)
+            logger.info(f"✅ ESCALAMIENTO FINALIZADO EXITOSAMENTE")
+            logger.info(f"=" * 80)
+            
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "conversacion_id": str(conversacion_actualizada.id),
+                "nuevo_estado": "activa",
+                "mensaje": "Escalamiento finalizado. Conversación devuelta al agente virtual."
+            }
+            
+        except Exception as e:
+            logger.error(f"=" * 80)
+            logger.error(f"❌ ERROR FINALIZANDO ESCALAMIENTO")
+            logger.error(f"   - Session ID: {session_id}")
+            logger.error(f"   - Error: {str(e)}")
+            logger.error(f"=" * 80)
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            self.db.rollback()
+            raise
+
+
+
     def marcar_confirmacion_pendiente(self, session_id: str):
         """Marca que una sesión tiene confirmación pendiente"""
         self._confirmaciones_pendientes[session_id] = datetime.utcnow()
@@ -220,7 +333,7 @@ No hay problema. Sigo aquí para ayudarte.
             # Asignar funcionario
             funcionario_asignado = None
             usuarios_notificados = 0
-            
+                        
             try:
                 agente = self.db.query(AgenteVirtual).filter(
                     AgenteVirtual.id_agente == id_agente
@@ -234,42 +347,80 @@ No hay problema. Sigo aquí para ayudarte.
                 if id_departamento:
                     funcionarios = self._obtener_usuarios_departamento(id_departamento)
                     
-                    if funcionarios:
-                        funcionario_asignado = funcionarios[0]
+                    # 🔥 NUEVO: Verificar si hay funcionarios disponibles
+                    if not funcionarios:
+                        # ❌ NO HAY FUNCIONARIOS DISPONIBLES
+                        #logger.error(f"=" * 80)
+                        logger.error(f"❌ SIN FUNCIONARIOS DISPONIBLES")
+                        #logger.error(f"   - Departamento: {id_departamento}")
+                        #logger.error(f"   - Agente: {agente.nombre_agente}")
+                        #logger.error(f"=" * 80)
                         
-                        nombre_completo = (
-                            f"{funcionario_asignado.persona.nombre} "
-                            f"{funcionario_asignado.persona.apellido}"
+                        # Agregar mensaje al usuario
+                        #mensaje_sin_disponibles = MessageCreate(
+                        #    role=MessageRole.system,
+                        #    content=(
+                        #        "⚠️ **No hay encargados disponibles en este momento**\n\n"
+                        #        f"Actualmente no hay personal disponible en el departamento de {agente.nombre_agente}.\n\n"
+                        #        "Por favor, intenta nuevamente más tarde o contacta con nosotros por otros medios.\n\n"
+                        #        "Disculpa las molestias. 🙏"
+                        #    )
+                        #)
+                        #await ConversationService.add_message(session_id, mensaje_sin_disponibles)
+                        
+                        # 🔥 REVERTIR ESTADO DE CONVERSACIÓN
+                        update_revertir = ConversationUpdate(
+                            estado=ConversationStatus.activa,
+                            requirio_atencion_humana=False
                         )
+                        await ConversationService.update_conversation(session_id, update_revertir)
                         
-                        update_asignacion = ConversationUpdate(
-                            escalado_a_usuario_id=funcionario_asignado.id_usuario,
-                            escalado_a_usuario_nombre=nombre_completo
-                        )
-                        await ConversationService.update_conversation(
-                            session_id,
-                            update_asignacion
-                        )
-                        
-                        logger.info(f"✅ Conversación asignada a: {nombre_completo}")
-                        
-                        mensaje_asignacion = MessageCreate(
-                            role=MessageRole.system,
-                            content=f"📌 Conversación asignada a {nombre_completo}"
-                        )
-                        await ConversationService.add_message(session_id, mensaje_asignacion)
-                        
-                        usuarios_notificados = await self._crear_notificacion_escalamiento(
-                            funcionario=funcionario_asignado,
-                            session_id=session_id,
-                            id_agente=id_agente,
-                            agente_nombre=agente.nombre_agente,
-                            motivo=motivo
-                        )
-                        
+                        # Retornar error controlado
+                        return {
+                            "ok": False,
+                            "session_id": session_id,
+                            "error": "no_disponibles",
+                            "mensaje": "No hay funcionarios disponibles en este departamento",
+                            "funcionario_asignado": None,
+                            "usuarios_notificados": 0
+                        }
+                    
+                    # ✅ SÍ HAY FUNCIONARIOS DISPONIBLES
+                    funcionario_asignado = funcionarios[0]
+                    
+                    nombre_completo = (
+                        f"{funcionario_asignado.persona.nombre} "
+                        f"{funcionario_asignado.persona.apellido}"
+                    )
+                    
+                    update_asignacion = ConversationUpdate(
+                        escalado_a_usuario_id=funcionario_asignado.id_usuario,
+                        escalado_a_usuario_nombre=nombre_completo
+                    )
+                    await ConversationService.update_conversation(
+                        session_id,
+                        update_asignacion
+                    )
+                    
+                    logger.info(f"✅ Conversación asignada a: {nombre_completo}")
+                    
+                    mensaje_asignacion = MessageCreate(
+                        role=MessageRole.system,
+                        content=f"📌 Conversación asignada a {nombre_completo}"
+                    )
+                    await ConversationService.add_message(session_id, mensaje_asignacion)
+                    
+                    usuarios_notificados = await self._crear_notificacion_escalamiento(
+                        funcionario=funcionario_asignado,
+                        session_id=session_id,
+                        id_agente=id_agente,
+                        agente_nombre=agente.nombre_agente,
+                        motivo=motivo
+                    )
+                            
             except Exception as e:
                 logger.error(f"❌ Error en asignación de funcionario: {e}")
-            
+
             # Crear/actualizar registro en MySQL
             try:
                 conversacion_sync = self.db.query(ConversacionSync).filter(
@@ -450,36 +601,84 @@ No hay problema. Sigo aquí para ayudarte.
             self.db.rollback()
             raise
     
+
     def _obtener_usuarios_departamento(self, id_departamento: int) -> List[Usuario]:
-        """Obtiene UN funcionario aleatorio del departamento"""
+        """
+        Obtiene UN funcionario DISPONIBLE del departamento
+        
+        🔥 NUEVO COMPORTAMIENTO:
+        - Solo funcionarios con disponible=True
+        - Del mismo departamento del agente
+        - Con rol activo de nivel 3 (funcionario)
+        - Estado activo
+        
+        Returns:
+            List[Usuario]: Lista con 1 funcionario disponible, o lista vacía si no hay
+        """
         try:
-            funcionarios = self.db.query(Usuario).join(
+            logger.info(f"🔍 Buscando funcionarios DISPONIBLES en departamento {id_departamento}")
+            
+            # 🔥 QUERY CON FILTRO DE DISPONIBILIDAD
+            funcionarios_disponibles = self.db.query(Usuario).join(
                 Persona, Usuario.id_persona == Persona.id_persona
             ).join(
                 UsuarioRol, Usuario.id_usuario == UsuarioRol.id_usuario
             ).join(
                 Rol, UsuarioRol.id_rol == Rol.id_rol
             ).filter(
-                Persona.id_departamento == id_departamento,
-                Usuario.estado == 'activo',
-                Persona.estado == 'activo',
-                UsuarioRol.activo == True,
-                Rol.activo == True,
-                Rol.nivel_jerarquia == 3
+                # 🔥 FILTROS CRÍTICOS
+                Persona.id_departamento == id_departamento,  # Mismo departamento
+                Usuario.disponible == True,                  # ✅ DISPONIBLE
+                Usuario.estado == 'activo',                  # Usuario activo
+                Persona.estado == 'activo',                  # Persona activa
+                UsuarioRol.activo == True,                   # Rol asignado activo
+                Rol.activo == True,                          # Rol existe y activo
+                Rol.nivel_jerarquia == 3                     # Solo funcionarios
             ).distinct().all()
             
-            if not funcionarios:
-                logger.warning(f"No hay funcionarios en departamento {id_departamento}")
+            # 🔥 LOGS DETALLADOS
+            logger.info(f"=" * 80)
+            logger.info(f"📊 RESULTADO BÚSQUEDA DE FUNCIONARIOS")
+            logger.info(f"   - Departamento: {id_departamento}")
+            logger.info(f"   - Funcionarios disponibles encontrados: {len(funcionarios_disponibles)}")
+            
+            if funcionarios_disponibles:
+                for i, func in enumerate(funcionarios_disponibles, 1):
+                    logger.info(f"   [{i}] {func.username} (ID: {func.id_usuario}) - {func.persona.nombre} {func.persona.apellido}")
+            else:
+                logger.warning(f"   ⚠️ NO HAY FUNCIONARIOS DISPONIBLES")
+            
+            logger.info(f"=" * 80)
+            
+            # 🔥 RETORNAR VACÍO SI NO HAY DISPONIBLES
+            if not funcionarios_disponibles:
+                logger.warning(f"❌ No hay funcionarios DISPONIBLES en departamento {id_departamento}")
                 return []
             
-            funcionario_seleccionado = random.choice(funcionarios)
-            logger.info(f"✅ Funcionario seleccionado: {funcionario_seleccionado.username}")
+            # 🔥 SELECCIONAR ALEATORIAMENTE ENTRE LOS DISPONIBLES
+            funcionario_seleccionado = random.choice(funcionarios_disponibles)
+            
+            logger.info(f"=" * 80)
+            logger.info(f"✅ FUNCIONARIO SELECCIONADO")
+            logger.info(f"   - Username: {funcionario_seleccionado.username}")
+            logger.info(f"   - ID: {funcionario_seleccionado.id_usuario}")
+            logger.info(f"   - Nombre: {funcionario_seleccionado.persona.nombre} {funcionario_seleccionado.persona.apellido}")
+            logger.info(f"   - Departamento: {funcionario_seleccionado.persona.id_departamento}")
+            logger.info(f"   - Disponible: {funcionario_seleccionado.disponible}")
+            logger.info(f"=" * 80)
             
             return [funcionario_seleccionado]
             
         except Exception as e:
-            logger.error(f"Error obteniendo funcionario: {e}")
+            logger.error(f"=" * 80)
+            logger.error(f"❌ ERROR OBTENIENDO FUNCIONARIO")
+            logger.error(f"   - Departamento: {id_departamento}")
+            logger.error(f"   - Error: {str(e)}")
+            logger.error(f"=" * 80)
+            import traceback
+            logger.error(traceback.format_exc())
             return []
+
     
     async def responder_como_humano(
         self,
@@ -565,3 +764,115 @@ No hay problema. Sigo aquí para ayudarte.
         except Exception as e:
             logger.error(f"❌ Error obteniendo conversaciones escaladas: {e}")
             return []
+        
+    # services/escalamiento_service.py
+    class EscalamientoService:
+        # ... código existente ...
+        
+        # 🔥 NUEVO: Keywords para finalizar escalamiento
+        KEYWORDS_FINALIZAR_ESCALAMIENTO = [
+            'finalizar escalamiento',
+            'terminar escalamiento',
+            'cancelar escalamiento',
+            'volver al bot',
+            'volver a la ia',
+            'volver al agente virtual',
+            'ya no necesito humano',
+            'cancelar derivación',
+            'cerrar escalamiento',
+            'regresar al bot'
+        ]
+        
+        def detectar_finalizacion_escalamiento(self, mensaje: str) -> bool:
+            """
+            Detecta si el usuario quiere finalizar el escalamiento
+            y volver al agente IA
+            """
+            mensaje_lower = mensaje.lower().strip()
+            
+            logger.info(f"🔍 Verificando finalización de escalamiento: '{mensaje}'")
+            
+            for keyword in self.KEYWORDS_FINALIZAR_ESCALAMIENTO:
+                if keyword in mensaje_lower:
+                    logger.info(f"🔔 Keyword de finalización detectado: '{keyword}'")
+                    return True
+            
+            return False
+        
+        async def finalizar_escalamiento(
+            self,
+            session_id: str,
+            motivo: str = "Finalizado por usuario"
+        ) -> Dict[str, Any]:
+            """
+            Finaliza un escalamiento activo y devuelve la conversación al agente IA
+            """
+            try:
+                logger.info(f"=" * 80)
+                logger.info(f"🔚 FINALIZANDO ESCALAMIENTO")
+                logger.info(f"   - Session ID: {session_id}")
+                logger.info(f"   - Motivo: {motivo}")
+                logger.info(f"=" * 80)
+                
+                # 1. Actualizar estado en MongoDB
+                update_finalizar = ConversationUpdate(
+                    estado=ConversationStatus.activa,  # Volver a activa
+                    requirio_atencion_humana=True  # Mantener que requirió atención
+                )
+                
+                conversacion_actualizada = await ConversationService.update_conversation(
+                    session_id,
+                    update_finalizar
+                )
+                
+                # 2. Agregar mensaje de sistema en MongoDB
+                mensaje_finalizacion = MessageCreate(
+                    role=MessageRole.system,
+                    content=f"✅ Escalamiento finalizado. {motivo}. La conversación continúa con el agente virtual."
+                )
+                await ConversationService.add_message(session_id, mensaje_finalizacion)
+                
+                logger.info(f"✅ Estado actualizado en MongoDB: activa")
+                
+                # 3. Actualizar en MySQL (Conversacion_Sync)
+                try:
+                    conversacion_sync = self.db.query(ConversacionSync).filter(
+                        ConversacionSync.mongodb_conversation_id == session_id
+                    ).first()
+                    
+                    if conversacion_sync:
+                        conversacion_sync.estado = EstadoConversacionEnum.activa
+                        conversacion_sync.ultima_sincronizacion = datetime.utcnow()
+                        self.db.commit()
+                        
+                        logger.info(f"✅ Estado actualizado en MySQL: activa")
+                    else:
+                        logger.warning(f"⚠️ No se encontró ConversacionSync para {session_id}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error actualizando MySQL: {e}")
+                    self.db.rollback()
+                
+                logger.info(f"=" * 80)
+                logger.info(f"✅ ESCALAMIENTO FINALIZADO EXITOSAMENTE")
+                logger.info(f"=" * 80)
+                
+                return {
+                    "ok": True,
+                    "session_id": session_id,
+                    "conversacion_id": str(conversacion_actualizada.id),
+                    "nuevo_estado": "activa",
+                    "mensaje": "Escalamiento finalizado. Conversación devuelta al agente virtual."
+                }
+                
+            except Exception as e:
+                logger.error(f"=" * 80)
+                logger.error(f"❌ ERROR FINALIZANDO ESCALAMIENTO")
+                logger.error(f"   - Session ID: {session_id}")
+                logger.error(f"   - Error: {str(e)}")
+                logger.error(f"=" * 80)
+                import traceback
+                logger.error(traceback.format_exc())
+                
+                self.db.rollback()
+                raise

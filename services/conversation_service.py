@@ -17,6 +17,12 @@ from models.conversation_mongo import (
 )
 from database.mongodb import get_conversations_collection
 
+from io import BytesIO
+import pandas as pd
+from openpyxl.styles import Font, PatternFill, Alignment
+from database.database import get_db  # 🔥 TU IMPORT CORRECTO
+from models.visitante_anonimo import VisitanteAnonimo  # 🔥 TU MODELO
+
 logger = logging.getLogger(__name__)
 
 
@@ -303,28 +309,26 @@ class ConversationService:
             logger.error(f"❌ Error actualizando conversación: {e}")
             raise
     
+    # services/conversation_service.py
     @staticmethod
     async def list_conversations(
         id_agente: Optional[int] = None,
         estado: Optional[str] = None,
         origin: Optional[str] = None,
         escaladas: Optional[bool] = None,
+        id_visitante: Optional[int] = None,
+        user_id: Optional[int] = None,
+        fecha_inicio: Optional[datetime] = None,
+        fecha_fin: Optional[datetime] = None,
+        calificacion_min: Optional[int] = None,
+        calificacion_max: Optional[int] = None,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 20,
+        sort_by: str = "created_at",
+        sort_order: str = "desc"
     ) -> ConversationListResponse:
         """
-        Listar conversaciones con filtros
-        
-        Args:
-            id_agente: Filtrar por agente
-            estado: Filtrar por estado
-            origin: Filtrar por origen
-            escaladas: Solo conversaciones escaladas
-            page: Número de página
-            page_size: Tamaño de página
-            
-        Returns:
-            ConversationListResponse con paginación
+        Listar conversaciones con filtros avanzados
         """
         try:
             collection = await get_conversations_collection()
@@ -344,19 +348,46 @@ class ConversationService:
             if escaladas is not None:
                 filter_query["metadata.requirio_atencion_humana"] = escaladas
             
+            if id_visitante is not None:
+                filter_query["id_visitante"] = id_visitante
+            
+            if user_id is not None:
+                filter_query["metadata.escalado_a_usuario_id"] = user_id
+            
+            # Filtro por rango de fechas
+            if fecha_inicio or fecha_fin:
+                filter_query["created_at"] = {}
+                if fecha_inicio:
+                    filter_query["created_at"]["$gte"] = fecha_inicio
+                if fecha_fin:
+                    filter_query["created_at"]["$lte"] = fecha_fin
+            
+            # Filtro por calificación
+            if calificacion_min or calificacion_max:
+                filter_query["metadata.calificacion"] = {}
+                if calificacion_min:
+                    filter_query["metadata.calificacion"]["$gte"] = calificacion_min
+                if calificacion_max:
+                    filter_query["metadata.calificacion"]["$lte"] = calificacion_max
+            
             # Contar total
             total = await collection.count_documents(filter_query)
             
             # Calcular skip
             skip = (page - 1) * page_size
             
+            # Determinar orden
+            sort_direction = -1 if sort_order.lower() == "desc" else 1
+            
             # Obtener conversaciones
-            cursor = collection.find(filter_query).sort("created_at", -1).skip(skip).limit(page_size)
+            cursor = collection.find(filter_query).sort(sort_by, sort_direction).skip(skip).limit(page_size)
             
             conversations = []
             async for conv in cursor:
                 conv["id"] = str(conv.pop("_id"))
                 conversations.append(ConversationResponse(**conv))
+            
+            logger.info(f"📋 Listadas {len(conversations)} de {total} conversaciones")
             
             return ConversationListResponse(
                 total=total,
@@ -368,7 +399,7 @@ class ConversationService:
         except Exception as e:
             logger.error(f"❌ Error listando conversaciones: {e}")
             raise
-    
+
     @staticmethod
     async def get_conversation_stats(
         id_agente: Optional[int] = None
@@ -629,4 +660,190 @@ class ConversationService:
                 
         except Exception as e:
             logger.error(f"❌ Error en obtener_o_crear_conversacion_activa: {e}")
+            raise
+
+
+
+
+    @staticmethod
+    async def export_to_excel(
+        id_agente: Optional[int] = None,
+        estado: Optional[str] = None,
+        origin: Optional[str] = None,
+        escaladas: Optional[bool] = None,
+        id_visitante: Optional[int] = None,
+        user_id: Optional[int] = None,
+        fecha_inicio: Optional[datetime] = None,
+        fecha_fin: Optional[datetime] = None,
+        calificacion_min: Optional[int] = None,
+        calificacion_max: Optional[int] = None,
+        incluir_visitante: bool = True
+    ) -> BytesIO:
+        """
+        Exportar conversaciones a Excel con datos del visitante
+        """
+        try:
+            collection = await get_conversations_collection()
+            
+            # Construir filtro
+            filter_query = {}
+            
+            if id_agente is not None:
+                filter_query["id_agente"] = id_agente
+            if estado is not None:
+                filter_query["metadata.estado"] = estado
+            if origin is not None:
+                filter_query["origin"] = origin
+            if escaladas is not None:
+                filter_query["metadata.requirio_atencion_humana"] = escaladas
+            if id_visitante is not None:
+                filter_query["id_visitante"] = id_visitante
+            if user_id is not None:
+                filter_query["metadata.escalado_a_usuario_id"] = user_id
+            
+            if fecha_inicio or fecha_fin:
+                filter_query["created_at"] = {}
+                if fecha_inicio:
+                    filter_query["created_at"]["$gte"] = fecha_inicio
+                if fecha_fin:
+                    filter_query["created_at"]["$lte"] = fecha_fin
+            
+            if calificacion_min or calificacion_max:
+                filter_query["metadata.calificacion"] = {}
+                if calificacion_min:
+                    filter_query["metadata.calificacion"]["$gte"] = calificacion_min
+                if calificacion_max:
+                    filter_query["metadata.calificacion"]["$lte"] = calificacion_max
+            
+            # Obtener conversaciones
+            cursor = collection.find(filter_query).sort("created_at", -1)
+            conversations = await cursor.to_list(length=None)
+            
+            # Preparar datos
+            data = []
+            visitante_ids = set()
+            
+            for conv in conversations:
+                row = {
+                    'Session ID': conv.get('session_id'),
+                    'ID Agente': conv.get('id_agente'),
+                    'Nombre Agente': conv.get('agent_name'),
+                    'Tipo Agente': conv.get('agent_type'),
+                    'ID Visitante': conv.get('id_visitante'),
+                    'Estado': conv.get('metadata', {}).get('estado'),
+                    'Origen': conv.get('origin'),
+                    'Fecha Creación': conv.get('created_at'),
+                    'Fecha Actualización': conv.get('updated_at'),
+                    'Total Mensajes': conv.get('metadata', {}).get('total_mensajes', 0),
+                    'Mensajes Usuario': conv.get('metadata', {}).get('total_mensajes_usuario', 0),
+                    'Mensajes Agente': conv.get('metadata', {}).get('total_mensajes_agente', 0),
+                    'Requirió Atención Humana': conv.get('metadata', {}).get('requirio_atencion_humana', False),
+                    'Escalado a Usuario ID': conv.get('metadata', {}).get('escalado_a_usuario_id'),
+                    'Escalado a Usuario Nombre': conv.get('metadata', {}).get('escalado_a_usuario_nombre'),
+                    'Calificación': conv.get('metadata', {}).get('calificacion'),
+                    'Comentario Calificación': conv.get('metadata', {}).get('comentario_calificacion'),
+                    'IP Origen': conv.get('metadata', {}).get('ip_origen'),
+                    'User Agent': conv.get('metadata', {}).get('user_agent'),
+                    'Dispositivo': conv.get('metadata', {}).get('dispositivo'),
+                    'Navegador': conv.get('metadata', {}).get('navegador')
+                }
+                
+                if conv.get('id_visitante'):
+                    visitante_ids.add(conv.get('id_visitante'))
+                
+                data.append(row)
+            
+            # 🔥 OBTENER DATOS DE VISITANTES DESDE TU BD MYSQL
+            visitantes_data = {}
+            if incluir_visitante and visitante_ids:
+                db = next(get_db())
+                try:
+                    visitantes = db.query(VisitanteAnonimo).filter(
+                        VisitanteAnonimo.id_visitante.in_(list(visitante_ids))
+                    ).all()
+                    
+                    for visitante in visitantes:
+                        visitantes_data[visitante.id_visitante] = {
+                            'nombre': visitante.nombre,
+                            'apellido': visitante.apellido,
+                            'email': visitante.email,
+                            'edad': visitante.edad,
+                            'ocupacion': visitante.ocupacion,
+                            'pais': visitante.pais,
+                            'ciudad': visitante.ciudad,
+                            'canal_acceso': visitante.canal_acceso,
+                            'pertenece_instituto': visitante.pertenece_instituto,
+                            'satisfaccion_estimada': visitante.satisfaccion_estimada,
+                            'primera_visita': visitante.primera_visita,
+                            'total_conversaciones': visitante.total_conversaciones,
+                            'total_mensajes': visitante.total_mensajes,
+                            'dispositivo': visitante.dispositivo.value if visitante.dispositivo else None,
+                            'navegador': visitante.navegador,
+                            'sistema_operativo': visitante.sistema_operativo
+                        }
+                finally:
+                    db.close()
+            
+            # 🔥 ENRIQUECER DATOS CON INFORMACIÓN DEL VISITANTE
+            if incluir_visitante:
+                for row in data:
+                    vid = row['ID Visitante']
+                    if vid and vid in visitantes_data:
+                        v = visitantes_data[vid]
+                        row['Visitante Nombre'] = v['nombre']
+                        row['Visitante Apellido'] = v['apellido']
+                        row['Visitante Email'] = v['email']
+                        row['Visitante Edad'] = v['edad']
+                        row['Visitante Ocupación'] = v['ocupacion']
+                        row['Visitante País'] = v['pais']
+                        row['Visitante Ciudad'] = v['ciudad']
+                        row['Visitante Canal Acceso'] = v['canal_acceso']
+                        row['Visitante Pertenece Instituto'] = v['pertenece_instituto']
+                        row['Visitante Satisfacción'] = v['satisfaccion_estimada']
+                        row['Visitante Primera Visita'] = v['primera_visita']
+                        row['Visitante Total Conversaciones'] = v['total_conversaciones']
+                        row['Visitante Total Mensajes'] = v['total_mensajes']
+                        row['Visitante Dispositivo'] = v['dispositivo']
+                        row['Visitante Navegador'] = v['navegador']
+                        row['Visitante SO'] = v['sistema_operativo']
+            
+            # Crear Excel
+            df = pd.DataFrame(data)
+            
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Conversaciones', index=False)
+                
+                workbook = writer.book
+                worksheet = writer.sheets['Conversaciones']
+                
+                # Estilo de encabezados
+                header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                header_font = Font(bold=True, color="FFFFFF")
+                
+                for cell in worksheet[1]:
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                # Ajustar anchos de columna
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            output.seek(0)
+            logger.info(f"✅ Excel generado con {len(data)} conversaciones")
+            
+            return output
+            
+        except Exception as e:
+            logger.error(f"❌ Error generando Excel: {e}")
             raise

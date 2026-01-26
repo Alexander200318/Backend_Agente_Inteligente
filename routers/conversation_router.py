@@ -16,6 +16,12 @@ from models.conversation_mongo import (
 )
 from services.conversation_service import ConversationService
 
+from fastapi.responses import StreamingResponse
+from io import BytesIO
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
@@ -229,7 +235,64 @@ async def get_messages(
         )
 
 
+
+@router.get(
+    "/export/excel",
+    summary="Exportar conversaciones a Excel con filtros"
+)
+async def export_conversations_to_excel(
+    id_agente: Optional[int] = Query(None, description="Filtrar por ID de agente"),
+    estado: Optional[ConversationStatus] = Query(None, description="Filtrar por estado"),
+    origin: Optional[str] = Query(None, description="Filtrar por origen"),
+    escaladas: Optional[bool] = Query(None, description="Solo conversaciones escaladas"),
+    id_visitante: Optional[int] = Query(None, description="Filtrar por ID de visitante"),
+    user_id: Optional[int] = Query(None, description="Filtrar por agente humano"),
+    fecha_inicio: Optional[datetime] = Query(None, description="Fecha inicio"),
+    fecha_fin: Optional[datetime] = Query(None, description="Fecha fin"),
+    calificacion_min: Optional[int] = Query(None, ge=1, le=5, description="Calificación mínima"),
+    calificacion_max: Optional[int] = Query(None, ge=1, le=5, description="Calificación máxima"),
+    incluir_visitante: bool = Query(True, description="Incluir datos del visitante")
+):
+    """
+    Exportar conversaciones a Excel con datos enriquecidos del visitante
+    """
+    try:
+        estado_str = estado.value if estado else None
+        
+        excel_file = await ConversationService.export_to_excel(
+            id_agente=id_agente,
+            estado=estado_str,
+            origin=origin,
+            escaladas=escaladas,
+            id_visitante=id_visitante,
+            user_id=user_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            calificacion_min=calificacion_min,
+            calificacion_max=calificacion_max,
+            incluir_visitante=incluir_visitante
+        )
+        
+        filename = f"conversaciones_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        return StreamingResponse(
+            excel_file,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error exportando a Excel: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al exportar: {str(e)}"
+        )
+
+
+
 # ==================== LISTADO Y FILTROS ====================
+
+# routers/conversation_router.py
 
 @router.get(
     "/",
@@ -241,8 +304,16 @@ async def list_conversations(
     estado: Optional[ConversationStatus] = Query(None, description="Filtrar por estado"),
     origin: Optional[str] = Query(None, description="Filtrar por origen (web, mobile, etc)"),
     escaladas: Optional[bool] = Query(None, description="Solo conversaciones escaladas a humano"),
+    id_visitante: Optional[int] = Query(None, description="Filtrar por ID de visitante"),
+    user_id: Optional[int] = Query(None, description="Filtrar por agente humano asignado"),
+    fecha_inicio: Optional[datetime] = Query(None, description="Fecha inicio (ISO 8601)"),
+    fecha_fin: Optional[datetime] = Query(None, description="Fecha fin (ISO 8601)"),
+    calificacion_min: Optional[int] = Query(None, ge=1, le=5, description="Calificación mínima"),
+    calificacion_max: Optional[int] = Query(None, ge=1, le=5, description="Calificación máxima"),
     page: int = Query(1, ge=1, description="Número de página"),
-    page_size: int = Query(20, ge=1, le=100, description="Resultados por página")
+    page_size: int = Query(20, ge=1, le=100, description="Resultados por página"),
+    sort_by: str = Query("created_at", description="Campo para ordenar"),
+    sort_order: str = Query("desc", description="Orden: asc o desc")
 ):
     """
     Listar conversaciones con paginación y filtros opcionales
@@ -252,13 +323,20 @@ async def list_conversations(
     - estado: activa, finalizada, abandonada, escalada_humano
     - origin: web, mobile, widget, api
     - escaladas: true/false para ver solo las que requirieron atención humana
+    - id_visitante: Conversaciones de un visitante específico
+    - user_id: Conversaciones atendidas por agente humano específico
+    - fecha_inicio: Conversaciones creadas desde esta fecha
+    - fecha_fin: Conversaciones creadas hasta esta fecha
+    - calificacion_min: Calificación mínima (1-5)
+    - calificacion_max: Calificación máxima (1-5)
     
     **Paginación:**
     - page: Número de página (default: 1)
     - page_size: Resultados por página (max: 100, default: 20)
+    - sort_by: Campo para ordenar (default: created_at)
+    - sort_order: asc o desc (default: desc)
     """
     try:
-        # Convertir enum a string si es necesario
         estado_str = estado.value if estado else None
         
         return await ConversationService.list_conversations(
@@ -266,8 +344,16 @@ async def list_conversations(
             estado=estado_str,
             origin=origin,
             escaladas=escaladas,
+            id_visitante=id_visitante,
+            user_id=user_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            calificacion_min=calificacion_min,
+            calificacion_max=calificacion_max,
             page=page,
-            page_size=page_size
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order
         )
     except Exception as e:
         logger.error(f"Error listando conversaciones: {e}")

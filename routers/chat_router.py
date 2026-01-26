@@ -311,19 +311,62 @@ async def chat_with_agent_stream(
                             motivo="Usuario confirmó escalamiento a humano"
                         )
                         
+                        # 🔥 VERIFICAR SI HUBO ERROR
+                        if not resultado_escalamiento.get('ok', False):
+                            error_tipo = resultado_escalamiento.get('error')
+                            
+                            if error_tipo == 'no_disponibles':
+                                # ❌ NO HAY FUNCIONARIOS DISPONIBLES
+                                logger.warning(f"⚠️ No hay funcionarios disponibles para session {payload.session_id}")
+                                
+                                # 🔥 MENSAJE VISIBLE EN EL WIDGET
+                                mensaje_no_disponibles = (
+                                    "⚠️ **No hay encargados disponibles en este momento**\n\n"
+                                    "Lamentablemente, no hay personal disponible para atenderte ahora.\n\n"
+                                    "**Opciones:**\n"
+                                    "• Intenta nuevamente más tarde\n"
+                                    "• Contáctanos por otros medios\n"
+                                    "• Puedo seguir ayudándote aquí\n\n"
+                                    "Disculpa las molestias. 🙏"
+                                )
+                                
+                                # 🔥 ENVIAR COMO TOKENS (para que se muestre como respuesta del agente)
+                                for char in mensaje_no_disponibles:
+                                    yield f"data: {safe_json_dumps({'type': 'token', 'content': char})}\n\n"
+                                    await asyncio.sleep(0.01)  # Simular escritura natural
+                                
+                                # 🔥 FINALIZAR STREAM
+                                yield f"data: {safe_json_dumps({'type': 'done', 'content': mensaje_no_disponibles})}\n\n"
+                                yield "data: [DONE]\n\n"
+                                return
+                            else:
+                                # Otro tipo de error
+                                yield f"data: {safe_json_dumps({'type': 'error', 'content': 'Error inesperado al escalar'})}\n\n"
+                                yield "data: [DONE]\n\n"
+                                return
+                        
+                        # ✅ ESCALAMIENTO EXITOSO
                         funcionario = resultado_escalamiento.get('funcionario_asignado', {})
                         nombre_funcionario = funcionario.get('nombre', 'Un agente')
-                        
+
+                        mensaje_escalamiento = (
+                            f"🔔 **Conectado con atención humana**\n\n"
+                            f"{nombre_funcionario} te atenderá en breve.\n\n"
+                            f"💡 **Tip:** Si deseas volver al agente virtual, escribe:\n"
+                            f"• \"Finalizar escalamiento\"\n"
+                            f"• \"Volver al bot\""
+                        )
+
                         evento_escalamiento = {
                             'type': 'escalamiento',
                             'session_id': payload.session_id,
-                            'content': f"🔔 Conectado con atención humana. {nombre_funcionario} te atenderá en breve.",
+                            'content': mensaje_escalamiento,
                             'metadata': {
                                 'usuario_id': funcionario.get('id'),
                                 'usuario_nombre': nombre_funcionario
                             }
                         }
-                        
+
                         yield f"data: {safe_json_dumps(evento_escalamiento)}\n\n"
                         yield "data: [DONE]\n\n"
                         return
@@ -370,6 +413,62 @@ Por favor responde claramente:
                     yield "data: [DONE]\n\n"
                     return
             
+            # ============================================
+            # 🔥 NUEVO PASO: DETECTAR FINALIZACIÓN DE ESCALAMIENTO
+            # ============================================
+            logger.info(f"🔍 Verificando si quiere finalizar escalamiento...")
+
+            quiere_finalizar = escalamiento_service.detectar_finalizacion_escalamiento(payload.message)
+
+            if quiere_finalizar:
+                logger.info(f"🔚 Intención de finalizar escalamiento detectada: '{payload.message}'")
+                
+                try:
+                    # Finalizar escalamiento
+                    resultado_finalizacion = await escalamiento_service.finalizar_escalamiento(
+                        session_id=payload.session_id,
+                        motivo="Solicitado por usuario"
+                    )
+                    
+                    if resultado_finalizacion.get('ok', False):
+                        # ✅ FINALIZACIÓN EXITOSA
+                        mensaje_finalizacion = (
+                            "✅ **Escalamiento finalizado**\n\n"
+                            "Has vuelto a chatear conmigo (agente virtual).\n\n"
+                            "¿En qué más puedo ayudarte? 😊"
+                        )
+                        
+                        # 🔥 ENVIAR MENSAJE AL WIDGET (con efecto de escritura)
+                        for char in mensaje_finalizacion:
+                            yield f"data: {safe_json_dumps({'type': 'token', 'content': char})}\n\n"
+                            await asyncio.sleep(0.01)
+                        
+                        # 🔥 FINALIZAR
+                        yield f"data: {safe_json_dumps({'type': 'done', 'content': mensaje_finalizacion})}\n\n"
+                        yield f"data: {safe_json_dumps({'type': 'finalizacion_escalamiento', 'content': 'Escalamiento finalizado'})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                    else:
+                        # ❌ ERROR EN FINALIZACIÓN
+                        logger.error(f"❌ Error finalizando escalamiento")
+                        
+                        mensaje_error = (
+                            "❌ **No se pudo finalizar el escalamiento**\n\n"
+                            "Ocurrió un error. Por favor intenta de nuevo."
+                        )
+                        
+                        yield f"data: {safe_json_dumps({'type': 'error', 'content': mensaje_error})}\n\n"
+                        yield "data: [DONE]\n\n"
+                        return
+                        
+                except Exception as e:
+                    logger.error(f"❌ Error finalizando escalamiento: {e}")
+                    
+                    mensaje_error = "❌ Error al finalizar escalamiento"
+                    yield f"data: {safe_json_dumps({'type': 'error', 'content': mensaje_error})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
             # ============================================
             # 🔥 PASO 2: SI NO HAY CONFIRMACIÓN PENDIENTE, DETECTAR ESCALAMIENTO
             # ============================================

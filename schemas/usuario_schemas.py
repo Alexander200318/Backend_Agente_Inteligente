@@ -78,6 +78,8 @@ class UsuarioResponse(UsuarioBase):
     fecha_creacion: Optional[datetime] = None
     persona: Optional[PersonaResponse]
 
+    disponible: bool = False
+
     class Config:
         from_attributes = True
 
