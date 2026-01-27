@@ -251,7 +251,12 @@ async def export_conversations_to_excel(
     fecha_fin: Optional[datetime] = Query(None, description="Fecha fin"),
     calificacion_min: Optional[int] = Query(None, ge=1, le=5, description="Calificación mínima"),
     calificacion_max: Optional[int] = Query(None, ge=1, le=5, description="Calificación máxima"),
-    incluir_visitante: bool = Query(True, description="Incluir datos del visitante")
+    incluir_visitante: bool = Query(True, description="Incluir datos del visitante"),
+    columnas_excluidas: List[str] = Query(
+    default=["id_agente", "session_id", "id_visitante", "escalado_a_usuario_id", 
+             "comentario_calificacion", "visitante_total_conversaciones"],
+    description="Columnas a excluir del reporte"
+)
 ):
     """
     Exportar conversaciones a Excel con datos enriquecidos del visitante
@@ -270,7 +275,8 @@ async def export_conversations_to_excel(
             fecha_fin=fecha_fin,
             calificacion_min=calificacion_min,
             calificacion_max=calificacion_max,
-            incluir_visitante=incluir_visitante
+            incluir_visitante=incluir_visitante,
+            columnas_excluidas=columnas_excluidas
         )
         
         filename = f"conversaciones_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"

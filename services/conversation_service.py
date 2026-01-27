@@ -677,7 +677,8 @@ class ConversationService:
         fecha_fin: Optional[datetime] = None,
         calificacion_min: Optional[int] = None,
         calificacion_max: Optional[int] = None,
-        incluir_visitante: bool = True
+        incluir_visitante: bool = True,
+        columnas_excluidas: List[str] = None
     ) -> BytesIO:
         """
         Exportar conversaciones a Excel con datos del visitante
@@ -810,6 +811,13 @@ class ConversationService:
             # Crear Excel
             df = pd.DataFrame(data)
             
+            # 🔥 ELIMINAR COLUMNAS NO DESEADAS
+            if columnas_excluidas:
+                columnas_a_eliminar = [col for col in columnas_excluidas if col in df.columns]
+                if columnas_a_eliminar:
+                    df = df.drop(columns=columnas_a_eliminar)
+                    logger.info(f"Columnas excluidas del Excel: {columnas_a_eliminar}")
+
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, sheet_name='Conversaciones', index=False)
