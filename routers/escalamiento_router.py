@@ -68,6 +68,16 @@ class TomarConversacionRequest(BaseModel):
     id_usuario: int
     nombre_usuario: str
 
+class CambiarDisponibilidadRequest(BaseModel):
+    """Request para cambiar disponibilidad de funcionario"""
+    disponible: bool
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "disponible": True
+            }
+        }
 
 # ============================================
 # ENDPOINTS - LISTAR CONVERSACIONES
@@ -414,7 +424,7 @@ async def responder_conversacion(
             ).first()
             
             if usuario and usuario.persona:
-                nombre_final = f"{usuario.persona.nombres} {usuario.persona.primer_apellido}"
+                nombre_final = f"{usuario.persona.nombres} {usuario.persona.apellido}"
                 logger.info(f"✅ Nombre obtenido de BD: '{nombre_final}'")
             else:
                 nombre_final = "Agente Humano"
@@ -512,7 +522,7 @@ async def transferir_conversacion(
             )
         
         # Obtener nombre completo
-        nombre_destino = f"{usuario_destino.persona.nombres} {usuario_destino.persona.primer_apellido}"
+        nombre_destino = f"{usuario_destino.persona.nombres} {usuario_destino.persona.apellido}"
         
         # Actualizar asignación en MongoDB
         update_data = ConversationUpdate(
@@ -1006,7 +1016,7 @@ async def listar_funcionarios_disponibles(
                 {
                     "id_usuario": f.id_usuario,
                     "username": f.username,
-                    "nombre_completo": f"{f.persona.nombres} {f.persona.primer_apellido}",
+                    "nombre_completo": f"{f.persona.nombres} {f.persona.apellido}",
                     "email": f.email,
                     "id_departamento": f.persona.id_departamento if f.persona else None
                 }
@@ -1020,3 +1030,350 @@ async def listar_funcionarios_disponibles(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error: {str(e)}"
         )
+    
+
+
+@router.post("/funcionario/{id_usuario}/cambiar-disponibilidad")
+async def cambiar_disponibilidad_funcionario(
+    id_usuario: int,
+    request: CambiarDisponibilidadRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 Cambiar estado de disponibilidad de un funcionario
+    
+    Permite que un funcionario se marque como disponible/no disponible
+    para recibir conversaciones escaladas.
+    
+    **Path params:**
+    - `id_usuario`: ID del funcionario
+    
+    **Body:**
+    - `disponible`: 
+      - `true` → Disponible para atender conversaciones
+      - `false` → No disponible (no recibirá asignaciones)
+    
+    **Returns:**
+    - Estado actualizado del funcionario
+    
+    **Ejemplo de uso:**
+    ```json
+    POST /escalamiento/funcionario/5/cambiar-disponibilidad
+    {
+        "disponible": false
+    }
+    ```
+    
+    **Casos de uso:**
+    - Funcionario inicia turno → `disponible: true`
+    - Funcionario termina turno → `disponible: false`
+    - Funcionario está en pausa → `disponible: false`
+    - Funcionario tiene demasiadas conversaciones → `disponible: false`
+    """
+    try:
+        logger.info(f"=" * 80)
+        logger.info(f"🔄 CAMBIO DE DISPONIBILIDAD")
+        logger.info(f"   - ID Usuario: {id_usuario}")
+        logger.info(f"   - Nuevo Estado: {'DISPONIBLE ✅' if request.disponible else 'NO DISPONIBLE ❌'}")
+        logger.info(f"=" * 80)
+        
+        # Buscar usuario activo
+        usuario = db.query(Usuario).filter(
+            Usuario.id_usuario == id_usuario,
+            Usuario.estado == 'activo'
+        ).first()
+        
+        if not usuario:
+            logger.error(f"❌ Usuario {id_usuario} no encontrado o inactivo")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Usuario con ID {id_usuario} no encontrado o está inactivo"
+            )
+        
+        # 🔥 CORREGIDO: Obtener nombre completo con try-except para manejar diferentes estructuras
+        nombre_completo = "Usuario"
+        if usuario.persona:
+            try:
+                # Intenta primero con 'nombres' (plural)
+                if hasattr(usuario.persona, 'nombres'):
+                    nombre_completo = f"{usuario.persona.nombres} {usuario.persona.apellido}"
+                # Si no existe, intenta con 'nombre' (singular)
+                elif hasattr(usuario.persona, 'nombre'):
+                    nombre_completo = f"{usuario.persona.nombre} {usuario.persona.apellido}"
+                # Fallback: solo apellido
+                elif hasattr(usuario.persona, 'apellido'):
+                    nombre_completo = usuario.persona.apellido
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo obtener nombre completo: {e}")
+                nombre_completo = f"Usuario {id_usuario}"
+        
+        # Guardar estado anterior
+        estado_anterior = usuario.disponible
+        
+        # Actualizar disponibilidad
+        usuario.disponible = request.disponible
+        usuario.fecha_actualizacion = datetime.now()
+        
+        db.commit()
+        db.refresh(usuario)
+        
+        logger.info(f"=" * 80)
+        logger.info(f"✅ DISPONIBILIDAD ACTUALIZADA")
+        logger.info(f"   - Usuario: {nombre_completo}")
+        logger.info(f"   - Username: {usuario.username}")
+        logger.info(f"   - Estado Anterior: {estado_anterior}")
+        logger.info(f"   - Estado Nuevo: {usuario.disponible}")
+        logger.info(f"=" * 80)
+        
+        return {
+            "success": True,
+            "id_usuario": id_usuario,
+            "username": usuario.username,
+            "nombre_completo": nombre_completo,
+            "disponible": usuario.disponible,
+            "estado_anterior": estado_anterior,
+            "cambio": "activado" if usuario.disponible and not estado_anterior else "desactivado" if not usuario.disponible and estado_anterior else "sin_cambio",
+            "mensaje": f"✅ Funcionario marcado como {'disponible para atender conversaciones' if usuario.disponible else 'no disponible'}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"=" * 80)
+        logger.error(f"❌ ERROR CAMBIANDO DISPONIBILIDAD")
+        logger.error(f"   - ID Usuario: {id_usuario}")
+        logger.error(f"   - Error: {str(e)}")
+        logger.error(f"=" * 80)
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error cambiando disponibilidad: {str(e)}"
+        )
+
+
+
+
+
+
+@router.get("/funcionario/{id_usuario}/estado-disponibilidad")
+async def obtener_estado_disponibilidad(
+    id_usuario: int,
+    db: Session = Depends(get_db)
+):
+    """
+    🔍 Obtener estado actual de disponibilidad de un funcionario
+    
+    Consulta si un funcionario está disponible o no para atender
+    conversaciones escaladas.
+    
+    **Path params:**
+    - `id_usuario`: ID del funcionario
+    
+    **Returns:**
+    - Estado de disponibilidad actual con información del usuario
+    
+    **Ejemplo de uso:**
+    ```
+    GET /escalamiento/funcionario/5/estado-disponibilidad
+    ```
+    
+    **Respuesta:**
+    ```json
+    {
+        "success": true,
+        "id_usuario": 5,
+        "username": "juan.perez",
+        "nombre_completo": "Juan Pérez",
+        "disponible": true,
+        "estado": "disponible",
+        "estado_cuenta": "activo"
+    }
+    ```
+    """
+    try:
+        usuario = db.query(Usuario).filter(
+            Usuario.id_usuario == id_usuario
+        ).first()
+        
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Usuario con ID {id_usuario} no encontrado"
+            )
+        
+        # 🔥 CORREGIDO: Obtener nombre completo con try-except
+        nombre_completo = "Usuario"
+        if usuario.persona:
+            try:
+                if hasattr(usuario.persona, 'nombres'):
+                    nombre_completo = f"{usuario.persona.nombres} {usuario.persona.apellido}"
+                elif hasattr(usuario.persona, 'nombre'):
+                    nombre_completo = f"{usuario.persona.nombre} {usuario.persona.apellido}"
+                elif hasattr(usuario.persona, 'apellido'):
+                    nombre_completo = usuario.persona.apellido
+            except Exception as e:
+                logger.warning(f"⚠️ No se pudo obtener nombre completo: {e}")
+                nombre_completo = f"Usuario {id_usuario}"
+        
+        # Determinar si puede recibir conversaciones
+        puede_recibir = usuario.disponible and usuario.estado == 'activo'
+        
+        return {
+            "success": True,
+            "id_usuario": id_usuario,
+            "username": usuario.username,
+            "nombre_completo": nombre_completo,
+            "disponible": usuario.disponible,
+            "estado": "disponible" if usuario.disponible else "no_disponible",
+            "estado_cuenta": usuario.estado.value if hasattr(usuario.estado, 'value') else usuario.estado,
+            "puede_recibir_conversaciones": puede_recibir,
+            "advertencia": None if puede_recibir else "Usuario no puede recibir conversaciones (no disponible o cuenta inactiva)"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo disponibilidad: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error obteniendo disponibilidad: {str(e)}"
+        )
+
+
+
+@router.get("/funcionarios/disponibles-ahora")
+async def listar_funcionarios_disponibles_ahora(
+    id_departamento: Optional[int] = None,
+    limite: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db)
+):
+    """
+    📋 Listar funcionarios DISPONIBLES en este momento
+    
+    Lista todos los funcionarios que están actualmente disponibles
+    para recibir conversaciones escaladas.
+    
+    **Query params:**
+    - `id_departamento`: Filtrar por departamento (opcional)
+    - `limite`: Número máximo de resultados (default: 50)
+    
+    **Returns:**
+    - Lista de funcionarios disponibles con su información
+    
+    **Ejemplo de uso:**
+    ```
+    GET /escalamiento/funcionarios/disponibles-ahora
+    GET /escalamiento/funcionarios/disponibles-ahora?id_departamento=3
+    ```
+    
+    **Respuesta:**
+    ```json
+    {
+        "success": true,
+        "total_disponibles": 5,
+        "funcionarios": [
+            {
+                "id_usuario": 5,
+                "username": "juan.perez",
+                "nombre_completo": "Juan Pérez",
+                "email": "juan.perez@instituto.edu",
+                "id_departamento": 3,
+                "nombre_departamento": "Secretaría Académica",
+                "disponible": true,
+                "ultimo_acceso": "2025-01-26T10:30:00"
+            }
+        ]
+    }
+    ```
+    """
+    try:
+        from models.usuario_rol import UsuarioRol
+        from models.rol import Rol
+        from models.departamento import Departamento
+        
+        logger.info(f"🔍 Buscando funcionarios disponibles...")
+        if id_departamento:
+            logger.info(f"   - Filtrado por departamento: {id_departamento}")
+        
+        # Query base: usuarios disponibles, activos, con rol de funcionario (nivel 3)
+        query = db.query(Usuario).join(
+            Persona, Usuario.id_persona == Persona.id_persona
+        ).join(
+            UsuarioRol, Usuario.id_usuario == UsuarioRol.id_usuario
+        ).join(
+            Rol, UsuarioRol.id_rol == Rol.id_rol
+        ).filter(
+            Usuario.disponible == True,           # ✅ DISPONIBLE
+            Usuario.estado == 'activo',           # Usuario activo
+            Persona.estado == 'activo',           # Persona activa
+            UsuarioRol.activo == True,            # Rol asignado activo
+            Rol.activo == True,                   # Rol existe y activo
+            Rol.nivel_jerarquia == 3              # Solo funcionarios
+        )
+        
+        # Filtro por departamento
+        if id_departamento:
+            query = query.filter(Persona.id_departamento == id_departamento)
+        
+        # Obtener funcionarios
+        funcionarios = query.distinct().limit(limite).all()
+        
+        logger.info(f"✅ Encontrados {len(funcionarios)} funcionarios disponibles")
+        
+        # Construir respuesta con información completa
+        funcionarios_data = []
+        for func in funcionarios:
+            # 🔥 CORREGIDO: Obtener nombre completo con try-except
+            nombre_completo = "Usuario"
+            if func.persona:
+                try:
+                    if hasattr(func.persona, 'nombres'):
+                        nombre_completo = f"{func.persona.nombres} {func.persona.apellido}"
+                    elif hasattr(func.persona, 'nombre'):
+                        nombre_completo = f"{func.persona.nombre} {func.persona.apellido}"
+                    elif hasattr(func.persona, 'apellido'):
+                        nombre_completo = func.persona.apellido
+                except Exception as e:
+                    logger.warning(f"⚠️ Error obteniendo nombre: {e}")
+                    nombre_completo = f"Usuario {func.id_usuario}"
+            
+            # Obtener departamento
+            departamento = None
+            nombre_departamento = None
+            if func.persona and func.persona.id_departamento:
+                departamento = db.query(Departamento).filter(
+                    Departamento.id_departamento == func.persona.id_departamento
+                ).first()
+                if departamento:
+                    nombre_departamento = departamento.nombre_departamento
+            
+            funcionarios_data.append({
+                "id_usuario": func.id_usuario,
+                "username": func.username,
+                "nombre_completo": nombre_completo,
+                "email": func.email,
+                "id_departamento": func.persona.id_departamento if func.persona else None,
+                "nombre_departamento": nombre_departamento,
+                "disponible": func.disponible,
+                "ultimo_acceso": func.ultimo_acceso.isoformat() if func.ultimo_acceso else None
+            })
+        
+        return {
+            "success": True,
+            "total_disponibles": len(funcionarios_data),
+            "id_departamento_filtro": id_departamento,
+            "funcionarios": funcionarios_data
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error listando funcionarios disponibles: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error listando funcionarios disponibles: {str(e)}"
+        )
+
+
