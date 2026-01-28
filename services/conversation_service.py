@@ -822,11 +822,50 @@ class ConversationService:
             df = pd.DataFrame(data)
             
             # 🔥 ELIMINAR COLUMNAS NO DESEADAS
-            if columnas_excluidas:
-                columnas_a_eliminar = [col for col in columnas_excluidas if col in df.columns]
-                if columnas_a_eliminar:
-                    df = df.drop(columns=columnas_a_eliminar)
-                    logger.info(f"Columnas excluidas del Excel: {columnas_a_eliminar}")
+            # Por defecto excluimos columnas sensibles/no deseadas en el reporte
+            default_exclude = [
+                'ID Agente',
+                'ID Visitante',
+                'Escalado a Usuario ID',
+                'Visitante Total Conversaciones',
+                'Comentario Calificación'
+            ]
+
+            if columnas_excluidas is None:
+                columnas_excluidas = default_exclude
+            else:
+                # combinar defaults con lo que venga para ser seguro
+                columnas_excluidas = list(dict.fromkeys(columnas_excluidas + default_exclude))
+
+            # Normalizar nombres para permitir excluir tanto snake_case como nombres legibles
+            def normalize(name: str) -> str:
+                return ''.join(ch for ch in name.lower().strip() if ch.isalnum() or ch == '_')
+
+            # construir mapa de normalizado -> columna real
+            normalized_map = {}
+            for col in df.columns:
+                key = col.lower().replace(' ', '_')
+                key = ''.join(ch for ch in key if ch.isalnum() or ch == '_')
+                normalized_map[key] = col
+
+            columnas_a_eliminar = []
+            for req in columnas_excluidas:
+                req_norm = req.lower().strip().replace(' ', '_')
+                req_norm = ''.join(ch for ch in req_norm if ch.isalnum() or ch == '_')
+                # si coincide exacto con columna normalizada
+                if req_norm in normalized_map:
+                    columnas_a_eliminar.append(normalized_map[req_norm])
+                else:
+                    # intentar coincidencia parcial (contains)
+                    for k, real in normalized_map.items():
+                        if req_norm in k or k in req_norm:
+                            columnas_a_eliminar.append(real)
+
+            # deduplicate
+            columnas_a_eliminar = list(dict.fromkeys(columnas_a_eliminar))
+            if columnas_a_eliminar:
+                df = df.drop(columns=[c for c in columnas_a_eliminar if c in df.columns])
+                logger.info(f"Columnas excluidas del Excel: {columnas_a_eliminar}")
 
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
