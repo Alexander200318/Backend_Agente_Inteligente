@@ -103,7 +103,16 @@ class Settings(BaseSettings):
             ] + cdn_origins
     
     # ============================================
-    #   OLLAMA (IA LOCAL)
+    #   GROQ (API IA REMOTA) - MODELO PRINCIPAL
+    # ============================================
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    GROQ_TIMEOUT: int = 30
+    GROQ_MAX_TOKENS: int = 2000
+    GROQ_TEMPERATURE: float = 0.7
+    
+    # ============================================
+    #   OLLAMA (IA LOCAL - OPCIONAL/BACKUP)
     # ============================================
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL_BASE: str = "llama3"
@@ -164,6 +173,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = True
+        extra = "ignore"  # Ignorar campos extra del .env
 
     # ============================================
     #   SERVICIO DE ASEGURAMIENTO / FENIX

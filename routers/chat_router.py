@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from database.database import get_db 
 from pydantic import BaseModel
-from ollama.ollama_agent_service import OllamaAgentService
+from groq_service.groq_agent_service import GroqAgentService
 from services.escalamiento_service import EscalamientoService
 from services.conversation_service import ConversationService, ConversationCreate
 from models.agente_virtual import AgenteVirtual
@@ -44,7 +44,7 @@ def chat_with_agent(
     payload: ChatRequest, 
     db: Session = Depends(get_db)
 ):
-    service = OllamaAgentService(db)
+    service = GroqAgentService(db)
     
     ip_origen = request.client.host if request.client else None
     user_agent = payload.client_info.user_agent if payload.client_info else request.headers.get("user-agent")
@@ -90,7 +90,7 @@ async def chat_with_agent_stream(
     4. Si confirma → escala
     5. Si rechaza → continúa con IA
     """
-    service = OllamaAgentService(db)
+    service = GroqAgentService(db)
     escalamiento_service = EscalamientoService(db)
     
     ip_origen = request.client.host if request.client else None
@@ -521,15 +521,6 @@ Por favor responde claramente:
                 max_tokens=payload.max_tokens
             ):
                 yield f"data: {safe_json_dumps(event)}\n\n"
-                last_event_time = datetime.now()
-                
-                await asyncio.sleep(0)
-                
-                if (datetime.now() - last_event_time).seconds > heartbeat_interval:
-                    yield f": heartbeat\n\n"
-                    last_event_time = datetime.now()
-            
-            yield f"data: {safe_json_dumps({'type': 'complete'})}\n\n"
             
         except Exception as e:
             logger.error(f"❌ Error en stream: {e}")
@@ -558,7 +549,7 @@ Por favor responde claramente:
 
 @router.get("/models")
 def list_models(db: Session = Depends(get_db)):
-    service = OllamaAgentService(db)
+    service = GroqAgentService(db)
     models = service.list_available_models()
     
     return {

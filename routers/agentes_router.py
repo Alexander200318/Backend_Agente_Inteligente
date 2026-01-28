@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database.database import get_db
 from services.agent_classifier import AgentClassifier
 from rag.rag_service import RAGService
-from ollama.ollama_agent_service import OllamaAgentService
+from groq_service.groq_agent_service import GroqAgentService
 from models.agente_virtual import AgenteVirtual
 
 router = APIRouter(prefix="/agentes", tags=["Agentes"])
@@ -17,7 +17,7 @@ def reindex_agent(id_agente: int, db: Session = Depends(get_db)):
 
 @router.post("/{id_agente}/build_model")
 def build_agent_model(id_agente: int, db: Session = Depends(get_db)):
-    service = OllamaAgentService(db)
+    service = GroqAgentService(db)
     try:
         result = service.crear_o_actualizar_modelo(id_agente)
         return result

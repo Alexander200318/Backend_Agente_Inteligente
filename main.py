@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     print(f"📦 Versión: {settings.APP_VERSION}")
     print(f"🔧 Modo DEBUG: {settings.DEBUG}")
     print(f"💾 Base de datos: {settings.DB_NAME}")
-    print(f"🤖 Modelo Ollama: {settings.OLLAMA_MODEL}")
+    print(f"🤖 Modelo Groq: {settings.GROQ_MODEL}")
     print(f"🔒 Rate Limiting: {settings.RATE_LIMIT_PER_MINUTE}/min (Login: {settings.RATE_LIMIT_LOGIN_PER_MINUTE}/min)")
     print("=" * 60)
     
@@ -346,7 +346,8 @@ from routers import (
     aseguramiento_router,
     escalamiento_router,
     websocket_router,
-    conversation_router
+    conversation_router,
+    groq_router
 )
 
 # Incluir routers de API con prefix /api/v1
@@ -369,6 +370,7 @@ app.include_router(embeddings_router.router, prefix="/api/v1")
 app.include_router(persona_router.router, prefix="/api/v1")
 app.include_router(usuario_rol_router.router, prefix="/api/v1")
 app.include_router(aseguramiento_router.router, prefix="/api/v1")
+app.include_router(groq_router.router, prefix="/api/v1")
 # Incluir router del widget SIN prefix (acceso directo a /widget y /admin)
 app.include_router(widget_router.router, tags=["Widget"])
 app.include_router(escalamiento_router.router, prefix="/api/v1")
@@ -402,9 +404,9 @@ def health_check(request: Request):
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
         "database": "connected",
-        "ollama": {
-            "url": settings.OLLAMA_BASE_URL,
-            "model": settings.OLLAMA_MODEL
+        "groq": {
+            "modelo": settings.GROQ_MODEL,
+            "disponible": bool(settings.GROQ_API_KEY)
         }
     }
 
@@ -432,9 +434,10 @@ def get_config(request: Request):
             "port": settings.DB_PORT,
             "name": settings.DB_NAME
         },
-        "ollama": {
-            "url": settings.OLLAMA_BASE_URL,
-            "model": settings.OLLAMA_MODEL
+        "groq": {
+            "modelo": settings.GROQ_MODEL,
+            "temperatura": settings.GROQ_TEMPERATURE,
+            "max_tokens": settings.GROQ_MAX_TOKENS
         },
         "redis": {
             "host": settings.REDIS_HOST,

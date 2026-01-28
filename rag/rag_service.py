@@ -245,6 +245,26 @@ class RAGService:
                     "priority": metas[idx].get("prioridad", 5),
                     "reranked": True
                 })
+            
+            # 🔥 NUEVO: Validar en BD en tiempo real si los documentos siguen activos
+            if not incluir_inactivos:
+                validated_results = []
+                for result in results:
+                    id_contenido = result["metadata"].get("id_contenido")
+                    if id_contenido:
+                        # Verificar en BD si sigue siendo activo
+                        unidad = self.db.query(UnidadContenido).filter(
+                            UnidadContenido.id_contenido == id_contenido
+                        ).first()
+                        
+                        if unidad and unidad.estado in ["activo", "publicado"] and not unidad.eliminado:
+                            validated_results.append(result)
+                        # else: omitir documentos inactivos o eliminados
+                    else:
+                        # Si no tiene id_contenido, incluir (podría ser categoría u otro tipo)
+                        validated_results.append(result)
+                
+                results = validated_results
         else:
             results = []
             for i in range(min(len(docs), n_results)):
@@ -267,6 +287,26 @@ class RAGService:
                 })
             
             results.sort(key=lambda x: x["score"], reverse=True)
+        
+        # 🔥 NUEVO: Validar en BD en tiempo real si los documentos siguen activos
+        if not incluir_inactivos:
+            validated_results = []
+            for result in results:
+                id_contenido = result["metadata"].get("id_contenido")
+                if id_contenido:
+                    # Verificar en BD si sigue siendo activo
+                    unidad = self.db.query(UnidadContenido).filter(
+                        UnidadContenido.id_contenido == id_contenido
+                    ).first()
+                    
+                    if unidad and unidad.estado in ["activo", "publicado"] and not unidad.eliminado:
+                        validated_results.append(result)
+                    # else: omitir documentos inactivos o eliminados
+                else:
+                    # Si no tiene id_contenido, incluir (podría ser categoría u otro tipo)
+                    validated_results.append(result)
+            
+            results = validated_results
         
         self._save_to_cache(cache_key, results)
         

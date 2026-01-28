@@ -30,11 +30,40 @@ class AgentClassifier:
         docs = []
         metas = []
         ids = []
+        
         for a in agentes:
-            text = f"{a.nombre_agente}. Area: {a.area_especialidad or ''}. Descripcion: {a.descripcion or ''}"
+            # 🔥 NUEVO: Incluir palabras clave de los documentos del agente
+            from models.unidad_contenido import UnidadContenido, EstadoContenidoEnum
+            
+            # Obtener palabras clave de los documentos activos del agente
+            documentos = self.db.query(UnidadContenido).filter(
+                UnidadContenido.id_agente == a.id_agente,
+                UnidadContenido.estado == EstadoContenidoEnum.activo,
+                UnidadContenido.eliminado == False
+            ).all()
+            
+            # Acumular contenido de TODOS los documentos
+            contenido_completo = []
+            for doc in documentos:
+                if doc.titulo:
+                    # Repetir el título varias veces para dar más peso
+                    contenido_completo.extend([doc.titulo] * 3)
+                if doc.palabras_clave:
+                    contenido_completo.extend(doc.palabras_clave.split(','))
+                if doc.contenido:
+                    # Incluir contenido completo
+                    contenido_completo.append(doc.contenido)
+                if doc.resumen:
+                    contenido_completo.append(doc.resumen)
+            
+            contenido_str = ". ".join([str(p).strip() for p in contenido_completo if p])
+            
+            # Construir texto con mayor enfoque en el contenido
+            text = f"{a.nombre_agente}. {a.area_especialidad or ''}. {a.descripcion or ''}. {contenido_str}"
             docs.append(text)
             metas.append({"id_agente": a.id_agente})
             ids.append(f"agent_{a.id_agente}")
+            
         if docs:
             embeddings = self.embedder.encode(docs).tolist()
             # replace whole collection (delete+create would be simpler depending on chroma)
@@ -47,7 +76,30 @@ class AgentClassifier:
         return {"ok": True, "total": len(docs)}
 
     def classify(self, pregunta: str, top_k: int = 1):
-        # Por si acaso, si está vacía, reconstruir
+        # 🔥 NUEVO: Búsqueda keyword primero
+        pregunta_lower = pregunta.lower()
+        
+        # Palabras clave por agente (manual)
+        keyword_map = {
+            1: ["desarrollo", "software", "programación", "lenguaje", "docentes", "profesores", "java", "python", "javascript"],
+            2: ["infraestructura", "tecnológica", "servidores", "redes"],
+            3: ["procesos", "industriales", "talleres", "laboratorios"],
+            4: ["deporte", "salud", "educación física", "cancha", "canchas", "deportes"],
+            5: ["gestión", "finanzas", "administración"],
+            6: ["seguridad", "rescate", "emergencia"],
+            7: ["médico", "medicina", "salud"],
+        }
+        
+        # Buscar coincidencias exactas
+        matched_agents = []
+        for agent_id, keywords in keyword_map.items():
+            if any(kw in pregunta_lower for kw in keywords):
+                matched_agents.append(agent_id)
+        
+        if matched_agents:
+            return matched_agents if top_k > 1 else matched_agents[0]
+        
+        # Si no hay coincidencia keyword, usar embeddings
         try:
             if self.collection.count() == 0:
                 self.build_index()
@@ -55,10 +107,12 @@ class AgentClassifier:
             print("Error al contar la colección:", e)
 
         q_emb = self.embedder.encode([pregunta]).tolist()[0]
-        res = self.collection.query(query_embeddings=[q_emb], n_results=top_k)
+        res = self.collection.query(query_embeddings=[q_emb], n_results=top_k if top_k > 1 else 3)
         metas = res.get("metadatas", [[]])[0]
 
         if not metas:
             return None
 
-        return metas[0]["id_agente"]
+        agent_ids = [m["id_agente"] for m in metas]
+        return agent_ids if top_k > 1 else agent_ids[0]
+

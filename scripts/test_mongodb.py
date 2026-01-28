@@ -91,7 +91,7 @@ async def test_add_messages(session_id: str):
             role=MessageRole.assistant,
             content="¡Hola! Estoy bien, ¿en qué puedo ayudarte?",
             sources_used=2,
-            model_used="llama3:8b",
+            model_used="llama-3.1-8b-instant",
             token_count=50
         )
         

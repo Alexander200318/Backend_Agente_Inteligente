@@ -4,15 +4,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from database.database import SessionLocal
-from ollama.ollama_agent_service import OllamaAgentService
+from groq_service.groq_agent_service import GroqAgentService
 
 def test_full_system():
     print("=" * 60)
-    print("🧪 PRUEBA COMPLETA: RAG + Ollama")
+    print("🧪 PRUEBA COMPLETA: RAG + Groq")
     print("=" * 60)
     
     db = SessionLocal()
-    service = OllamaAgentService(db)
+    service = GroqAgentService(db)
     
     # Configuración
     id_agente = 3 
@@ -50,9 +50,9 @@ def test_full_system():
     except Exception as e:
         print(f"❌ Error: {e}")
         print("\n💡 Verifica:")
-        print("   1. Ollama está corriendo: ollama serve")
+        print("   1. Groq API key está configurada: .env")
         print("   2. Tienes contenido indexado para el agente 3")
-        print("   3. Redis está activo")
+        print("   3. MongoDB está activo")
     
     finally:
         db.close()

@@ -1231,6 +1231,13 @@ async function processStream(response) {
                     }
 
                     switch (event.type) {
+                        case 'start':
+                            console.log('🚀 Iniciando respuesta del agente');
+                            typingIndicator.classList.add('active');
+                            fullResponse = '';
+                            currentBotMessageDiv = null;
+                            break;
+                            
                         case 'status':
                             console.log('📊', event.content);
                             break;
@@ -1256,6 +1263,7 @@ async function processStream(response) {
                             break;
                             
                         case 'token':
+                        case 'chunk':
                             if (!currentBotMessageDiv) {
                                 currentBotMessageDiv = document.createElement('div');
                                 currentBotMessageDiv.className = 'message bot streaming';
