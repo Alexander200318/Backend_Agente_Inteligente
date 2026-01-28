@@ -157,15 +157,14 @@ except Exception as e:
 
 # ==================== MIDDLEWARE ====================
 
-# CORS
+# CORS - Configurado dinámicamente según el ambiente
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_origins=["*"],
-    
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    max_age=600,  # Cache de preflight requests por 10 minutos
 )
 
 # 🔥 Middleware de seguridad - Headers HTTP seguros

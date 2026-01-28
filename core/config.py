@@ -62,15 +62,35 @@ class Settings(BaseSettings):
     # ============================================
     #   CORS
     # ============================================
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:8000",
-        "http://localhost:8081",
-        "http://127.0.0.1:8081",
-        "http://192.168.5.6:8081",
-        "*"  # Quita esto en producción
-    ]
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")  # development, staging, production
+    
+    @property
+    def CORS_ORIGINS(self) -> List[str]:
+        """Configuración de CORS según el ambiente"""
+        if self.ENVIRONMENT == "production":
+            # 🔒 Producción: Solo dominios específicos (HTTPS)
+            return [
+                "https://app.tudominio.com",
+                "https://portal.tudominio.com",
+            ]
+        elif self.ENVIRONMENT == "staging":
+            # 🟡 Staging: Múltiples dominios HTTP y HTTPS
+            return [
+                "https://staging-app.tudominio.com",
+                "http://staging-app.tudominio.com",
+                "https://staging.tudominio.com",
+                "http://staging.tudominio.com",
+            ]
+        else:
+            # 🟢 Desarrollo: Todos los localhost
+            return [
+                "http://localhost:3000",
+                "http://localhost:5173",
+                "http://localhost:8000",
+                "http://localhost:8081",
+                "http://127.0.0.1:8081",
+                "http://192.168.5.5:8081",  # IP local de desarrollo
+            ]
     
     # ============================================
     #   OLLAMA (IA LOCAL)
