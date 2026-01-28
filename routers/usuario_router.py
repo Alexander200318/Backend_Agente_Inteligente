@@ -84,7 +84,7 @@ class LoginRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "username": "admin",
-                "password": "Admin123!"
+                "password": "[PASSWORD_PLACEHOLDER]"
             }
         }
 
@@ -96,7 +96,7 @@ class LoginResponse(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "token": "[JWT_TOKEN]",
                 "usuario": {
                     "id_usuario": 1,
                     "username": "admin",

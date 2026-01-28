@@ -138,10 +138,10 @@
                 <p style="margin-bottom: 15px;">Copia y pega este código en tu tema de WordPress (footer.php antes del cierre de &lt;/body&gt;):</p>
                 <textarea readonly style="font-family: monospace; font-size: 12px;">
 &lt;!-- ChatBot Widget --&gt;
-&lt;link rel="stylesheet" href="http://localhost:8000/static/css/widget.css"&gt;
-&lt;script src="http://localhost:8000/static/js/widget.js"&gt;&lt;/script&gt;</textarea>
+&lt;link rel="stylesheet" href="{{ url_for('static', path='/css/widget.css') }}"&gt;
+&lt;script src="{{ url_for('static', path='/js/widget.js') }}"&gt;&lt;/script&gt;</textarea>
                 <p style="margin-top: 15px; color: #666;">
-                    <strong>Nota:</strong> Cambia <code>localhost:8000</code> por tu dominio en producción.
+                    <strong>Nota:</strong> Las rutas se generan automáticamente según tu dominio. No necesitas cambiar localhost en producción.
                 </p>
             </div>
         </div>

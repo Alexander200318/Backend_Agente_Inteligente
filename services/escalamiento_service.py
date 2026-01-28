@@ -145,7 +145,7 @@ class EscalamientoService:
         logger.warning(f"⚠️ Respuesta indefinida: '{mensaje_lower}'")
         return 'indefinido'
     
-    # 🔥🔥🔥 AGREGAR ESTE MÉTODO AQUÍ 🔥🔥🔥
+    # Método para agregar lógica adicional
     def detectar_finalizacion_escalamiento(self, mensaje: str) -> bool:
         """
         Detecta si el usuario quiere finalizar el escalamiento
@@ -163,7 +163,7 @@ class EscalamientoService:
         logger.info(f"✅ No se detectó intención de finalizar escalamiento")
         return False
 
-    # 🔥🔥🔥 AGREGAR ESTE MÉTODO DESPUÉS 🔥🔥🔥
+    # Método para procesamiento posterior
     async def finalizar_escalamiento(
         self,
         session_id: str,

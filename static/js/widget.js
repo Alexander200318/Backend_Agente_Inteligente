@@ -59,7 +59,8 @@ let emailRegistrationForm; // 🔥 NUEVO: Formulario completo de registro
     console.log('✅ Protección contra extensiones activada');
 })();
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// Detectar URL base automáticamente en lugar de hardcodear localhost
+const API_BASE_URL = window.location.protocol + '//' + window.location.host + '/api/v1';
 
 // ==================== GESTIÓN DE SESIONES ====================
 const SESSION_STORAGE_KEY = 'tecai_session_id';
@@ -1366,7 +1367,9 @@ function connectWebSocket(sessionId) {
         return;
     }
     
-    const wsUrl = `ws://localhost:8000/ws/chat/${sessionId}`;
+    // Detectar WebSocket URL automáticamente
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/chat/${sessionId}`;
     console.log('🔌 Conectando WebSocket:', wsUrl);
     
     websocket = new WebSocket(wsUrl);

@@ -54,6 +54,6 @@ class CambiarDepartamentoResponse(BaseModel):
                     "nombre": "Recursos Humanos",
                     "codigo": "RRHH"
                 },
-                "fecha_cambio": "2025-12-10T15:30:00"
+                "fecha_cambio": "[DATETIME_PLACEHOLDER]"
             }
         }

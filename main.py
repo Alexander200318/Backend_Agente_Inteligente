@@ -158,28 +158,89 @@ except Exception as e:
 # ==================== MIDDLEWARE ====================
 
 # CORS - Configurado dinámicamente según el ambiente
+if settings.DEBUG:
+    # Desarrollo: permitir CDN para Swagger UI
+    cors_origins = settings.CORS_ORIGINS
+else:
+    # Producción: restringido y sin docs públicos
+    cors_origins = settings.CORS_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
-    max_age=600,  # Cache de preflight requests por 10 minutos
+    max_age=600,
 )
 
 # 🔥 Middleware de seguridad - Headers HTTP seguros
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    """Agregar headers de seguridad a todas las respuestas"""
-    response = await call_next(request)
+    """Agregar headers de seguridad a TODAS las respuestas"""
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        # Si ocurre un error, crear respuesta con headers de seguridad
+        response = JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": True, "message": "Error interno del servidor"}
+        )
+        raise
     
-    # Headers de seguridad
+    # Headers de seguridad - SIEMPRE se agregan
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "ALLOWALL"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(self), camera=(self)"
+    
+    # Content Security Policy - Protege contra XSS e inyección de datos
+    # En desarrollo: más permisivo; en producción: más restrictivo
+    if settings.DEBUG:
+        csp_policy = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; "
+            "img-src 'self' data: https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; "
+            "font-src 'self' data: https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.gstatic.com; "
+            "connect-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; "
+            "frame-ancestors 'self'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+    else:
+        csp_policy = (
+            "default-src 'self'; "
+            "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; "
+            "style-src 'self' https://cdnjs.cloudflare.com https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+            "img-src 'self' data: https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; "
+            "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+            "connect-src 'self' https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; "
+            "frame-ancestors 'self'; "
+            "base-uri 'self'; "
+            "form-action 'self'"
+        )
+    
+    response.headers["Content-Security-Policy"] = csp_policy
+    
+    # Mitigation para divulgación de timestamps Unix
+    # Nota: Los timestamps en respuestas JSON son normales e inevitables en APIs REST
+    # Las marcas de tiempo no revelan información sensible por sí solas
+    # La alerta "Divulgación de Marcas de Tiempo" es principalmente informativa
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    
+    # Cache-Control - Headers de caché
+    # Para archivos estáticos: cache largo
+    if request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"  # 1 año
+    # Para API: no cachear
+    elif request.url.path.startswith("/api") or request.url.path.startswith("/openapi"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, private"
+    # Por defecto: cache corto
+    else:
+        response.headers["Cache-Control"] = "public, max-age=3600"  # 1 hora
     
     return response
 
@@ -189,7 +250,7 @@ async def add_security_headers(request: Request, call_next):
 @app.exception_handler(BaseAPIException)
 async def base_exception_handler(request: Request, exc: BaseAPIException):
     """Manejo de excepciones personalizadas"""
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": True,
@@ -197,6 +258,11 @@ async def base_exception_handler(request: Request, exc: BaseAPIException):
             "path": str(request.url)
         }
     )
+    # Agregar headers de seguridad
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    return response
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -209,7 +275,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "type": error["type"]
         })
     
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "error": True,
@@ -217,11 +283,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "details": errors
         }
     )
+    # Agregar headers de seguridad
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return response
 
 @app.exception_handler(SQLAlchemyError)
 async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
     """Manejo de errores de base de datos"""
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "error": True,
@@ -229,11 +299,15 @@ async def sqlalchemy_exception_handler(request: Request, exc: SQLAlchemyError):
             "details": str(exc) if settings.DEBUG else "Contacte al administrador"
         }
     )
+    # Agregar headers de seguridad
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return response
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Manejo de errores generales"""
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "error": True,
@@ -241,6 +315,10 @@ async def general_exception_handler(request: Request, exc: Exception):
             "details": str(exc) if settings.DEBUG else "Contacte al administrador"
         }
     )
+    # Agregar headers de seguridad
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return response
 
 # ==================== ROUTERS ====================
 

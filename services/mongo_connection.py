@@ -73,9 +73,9 @@ async def get_conversations_by_user(
     try:
         collection = get_conversations_collection()
         
-        # 🔍 DEBUG: Ver qué colección estamos usando
+        # Obtener conversaciones del usuario
         logger.info(f"=" * 80)
-        logger.info(f"🔍 DEBUG get_conversations_by_user")
+        logger.info(f"Obteniendo conversaciones del usuario")
         logger.info(f"🔍 user_id: {user_id} (tipo: {type(user_id)})")
         logger.info(f"🔍 solo_activas: {solo_activas}")
         logger.info(f"🔍 collection name: {collection.name}")
@@ -100,7 +100,7 @@ async def get_conversations_by_user(
         })
         logger.info(f"📊 Documentos con escalado_a_usuario_id={user_id}: {count_por_usuario}")
         
-        # 🔥 TERCERO: Ver todos los valores únicos de escalado_a_usuario_id
+        # Procesar valores únicos
         pipeline = [
             {"$group": {"_id": "$metadata.escalado_a_usuario_id", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}}

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # ============================================
     APP_NAME: str = "CallCenterAI - Chatbot Institucional"
     APP_VERSION: str = "3.0.0"
-    DEBUG: bool = True
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")  # 🔒 False por defecto (producción)
     
     # ============================================
     #   BASE DE DATOS MYSQL
@@ -67,12 +67,19 @@ class Settings(BaseSettings):
     @property
     def CORS_ORIGINS(self) -> List[str]:
         """Configuración de CORS según el ambiente"""
+        # CDN que necesita Swagger UI (usados en todos los ambientes)
+        cdn_origins = [
+            "https://cdn.jsdelivr.net",
+            "https://cdnjs.cloudflare.com",
+            "https://unpkg.com",
+        ]
+        
         if self.ENVIRONMENT == "production":
             # 🔒 Producción: Solo dominios específicos (HTTPS)
             return [
                 "https://app.tudominio.com",
                 "https://portal.tudominio.com",
-            ]
+            ] + cdn_origins
         elif self.ENVIRONMENT == "staging":
             # 🟡 Staging: Múltiples dominios HTTP y HTTPS
             return [
@@ -80,17 +87,20 @@ class Settings(BaseSettings):
                 "http://staging-app.tudominio.com",
                 "https://staging.tudominio.com",
                 "http://staging.tudominio.com",
-            ]
+            ] + cdn_origins
         else:
-            # 🟢 Desarrollo: Todos los localhost
+            # 🟢 Desarrollo: Todos los localhost + CDN
             return [
                 "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:8000",
+                "https://localhost:8000",
                 "http://localhost:8081",
+                "http://127.0.0.1:8000",
+                "https://127.0.0.1:8000",
                 "http://127.0.0.1:8081",
                 "http://192.168.5.5:8081",  # IP local de desarrollo
-            ]
+            ] + cdn_origins
     
     # ============================================
     #   OLLAMA (IA LOCAL)

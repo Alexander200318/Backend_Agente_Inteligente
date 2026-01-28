@@ -36,7 +36,7 @@ class UnidadContenidoService:
             ).first()
             
             if categoria:
-                # 🔥 LOG TEMPORAL PARA DEBUG
+                # Log temporal
                 print(f"=" * 80)
                 print(f"📝 INDEXANDO CONTENIDO:")
                 print(f"   ID: {contenido.id_contenido}")

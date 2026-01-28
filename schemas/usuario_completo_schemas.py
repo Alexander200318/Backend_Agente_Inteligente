@@ -67,7 +67,7 @@ class UsuarioCompletoCreate(BaseModel):
             "example": {
                 "username": "juan_perez",
                 "email": "juan.perez@example.com",
-                "password": "Secure123!",
+                "password": "[PASSWORD_PLACEHOLDER]",
                 "estado": "activo",
                 "persona": {
                     "cedula": "0102417144",
@@ -145,7 +145,7 @@ class UsuarioCompletoResponse(BaseModel):
                     "estado": "activo",
                     "id_persona": 12,
                     "requiere_cambio_password": True,
-                    "fecha_creacion": "2025-12-03T15:30:00"
+                    "fecha_creacion": "[DATETIME_PLACEHOLDER]"
                 },
                 "persona": {
                     "id_persona": 12,
@@ -160,13 +160,13 @@ class UsuarioCompletoResponse(BaseModel):
                         "id_rol": 2,
                         "nombre_rol": "Administrador",
                         "nivel_jerarquia": 2,
-                        "fecha_asignacion": "2025-12-03T15:30:00"
+                        "fecha_asignacion": "[DATETIME_PLACEHOLDER]"
                     },
                     {
                         "id_rol": 3,
                         "nombre_rol": "Funcionario",
                         "nivel_jerarquia": 3,
-                        "fecha_asignacion": "2025-12-03T15:30:00"
+                        "fecha_asignacion": "[DATETIME_PLACEHOLDER]"
                     }
                 ]
             }

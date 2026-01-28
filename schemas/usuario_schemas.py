@@ -91,6 +91,20 @@ class UsuarioLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     usuario: UsuarioResponse
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "access_token": "[JWT_TOKEN]",
+                "token_type": "bearer",
+                "usuario": {
+                    "id_usuario": 1,
+                    "username": "admin",
+                    "email": "admin@example.com",
+                    "estado": "activo"
+                }
+            }
+        }
 
 class CambioPasswordRequest(BaseModel):
     password_actual: str = Field(..., min_length=8)
