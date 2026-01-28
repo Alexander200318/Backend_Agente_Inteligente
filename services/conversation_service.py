@@ -402,7 +402,9 @@ class ConversationService:
 
     @staticmethod
     async def get_conversation_stats(
-        id_agente: Optional[int] = None
+        id_agente: Optional[int] = None,
+        fecha_inicio: Optional[datetime] = None,  # 🔥 AGREGAR
+        fecha_fin: Optional[datetime] = None  # 🔥 AGREGAR
     ) -> ConversationStats:
         """
         Obtener estadísticas de conversaciones
@@ -420,6 +422,14 @@ class ConversationService:
             match_filter = {}
             if id_agente is not None:
                 match_filter["id_agente"] = id_agente
+
+            # 🔥 AGREGAR FILTRO DE FECHAS
+            if fecha_inicio or fecha_fin:
+                match_filter["created_at"] = {}
+                if fecha_inicio:
+                    match_filter["created_at"]["$gte"] = fecha_inicio
+                if fecha_fin:
+                    match_filter["created_at"]["$lte"] = fecha_fin
             
             # Pipeline de agregación
             pipeline = [
@@ -855,3 +865,94 @@ class ConversationService:
         except Exception as e:
             logger.error(f"❌ Error generando Excel: {e}")
             raise
+
+
+
+    @staticmethod
+    async def get_daily_stats(
+        id_agente: Optional[int] = None,
+        dias: int = 7
+    ) -> Dict[str, Any]:
+        """
+        Obtener estadísticas agrupadas por día
+        
+        Args:
+            id_agente: Filtrar por agente (opcional)
+            dias: Número de días hacia atrás
+            
+        Returns:
+            Dict con estadísticas por día
+        """
+        try:
+            from datetime import timedelta
+            
+            collection = await get_conversations_collection()
+            
+            # Calcular fecha inicio
+            fecha_fin = datetime.utcnow()
+            fecha_inicio = fecha_fin - timedelta(days=dias)
+            
+            # Filtro base
+            match_filter = {
+                "created_at": {
+                    "$gte": fecha_inicio,
+                    "$lte": fecha_fin
+                }
+            }
+            
+            if id_agente is not None:
+                match_filter["id_agente"] = id_agente
+            
+            # Pipeline de agregación por día
+            pipeline = [
+                {"$match": match_filter},
+                {
+                    "$group": {
+                        "_id": {
+                            "$dateToString": {
+                                "format": "%Y-%m-%d",
+                                "date": "$created_at"
+                            }
+                        },
+                        "total": {"$sum": 1},
+                        "activas": {
+                            "$sum": {"$cond": [{"$eq": ["$metadata.estado", "activa"]}, 1, 0]}
+                        },
+                        "finalizadas": {
+                            "$sum": {"$cond": [{"$eq": ["$metadata.estado", "finalizada"]}, 1, 0]}
+                        },
+                        "escaladas": {
+                            "$sum": {"$cond": ["$metadata.requirio_atencion_humana", 1, 0]}
+                        }
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+            
+            results = await collection.aggregate(pipeline).to_list(length=None)
+            
+            # Formatear resultados
+            stats_por_dia = []
+            for result in results:
+                stats_por_dia.append({
+                    "fecha": result["_id"],
+                    "total": result["total"],
+                    "activas": result["activas"],
+                    "finalizadas": result["finalizadas"],
+                    "escaladas": result["escaladas"]
+                })
+            
+            logger.info(f"✅ Estadísticas diarias obtenidas: {len(stats_por_dia)} días")
+            
+            return {
+                "periodo": {
+                    "fecha_inicio": fecha_inicio.isoformat(),
+                    "fecha_fin": fecha_fin.isoformat(),
+                    "dias": dias
+                },
+                "datos": stats_por_dia
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error obteniendo estadísticas diarias: {e}")
+            raise 

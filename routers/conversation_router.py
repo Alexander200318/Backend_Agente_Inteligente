@@ -377,7 +377,9 @@ async def list_conversations(
     summary="Estadísticas generales"
 )
 async def get_conversation_stats(
-    id_agente: Optional[int] = Query(None, description="Filtrar estadísticas por agente")
+    id_agente: Optional[int] = Query(None, description="Filtrar estadísticas por agente"),
+    fecha_inicio: Optional[datetime] = Query(None, description="Fecha inicio (ISO 8601)"),  # 🔥 AGREGAR
+    fecha_fin: Optional[datetime] = Query(None, description="Fecha fin (ISO 8601)")  # 🔥 AGREGAR
 ):
     """
     Obtener estadísticas generales de conversaciones
@@ -389,9 +391,14 @@ async def get_conversation_stats(
     - Calificación promedio
     
     Si se especifica id_agente, las estadísticas serán solo de ese agente
+    Si se especifican fechas, filtra por rango de fechas
     """
     try:
-        return await ConversationService.get_conversation_stats(id_agente=id_agente)
+        return await ConversationService.get_conversation_stats(
+            id_agente=id_agente,
+            fecha_inicio=fecha_inicio,  # 🔥 PASAR PARÁMETROS
+            fecha_fin=fecha_fin  # 🔥 PASAR PARÁMETROS
+        )
     except Exception as e:
         logger.error(f"Error obteniendo estadísticas: {e}")
         raise HTTPException(
@@ -626,4 +633,34 @@ async def obtain_or_create_conversation(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al obtener o crear conversación: {str(e)}"
+        )
+    
+
+@router.get(
+    "/stats/daily",
+    summary="Estadísticas diarias para gráficas"
+)
+async def get_daily_stats(
+    id_agente: Optional[int] = Query(None, description="Filtrar por agente"),
+    dias: int = Query(7, ge=1, le=30, description="Número de días (1-30)")
+):
+    """
+    Obtener estadísticas agrupadas por día para gráficas de tendencias
+    
+    Retorna datos de los últimos N días con:
+    - Total de conversaciones por día
+    - Conversaciones activas por día
+    - Conversaciones finalizadas por día
+    - Conversaciones escaladas por día
+    """
+    try:
+        return await ConversationService.get_daily_stats(
+            id_agente=id_agente,
+            dias=dias
+        )
+    except Exception as e:
+        logger.error(f"Error obteniendo estadísticas diarias: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener estadísticas diarias: {str(e)}"
         )
