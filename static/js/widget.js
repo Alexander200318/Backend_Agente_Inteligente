@@ -306,6 +306,29 @@ document.addEventListener('DOMContentLoaded', () => {
         emailRegistrationForm.addEventListener('submit', handleRegistrationSubmit);
     }
 
+    // 🔥 NUEVO: Event listeners para modal de escalamiento
+    const confirmacionModal = document.getElementById('confirmacion-escalamiento-modal');
+    const btnModalNo = document.getElementById('btn-modal-no');
+    const btnModalSi = document.getElementById('btn-modal-si');
+    
+    if (btnModalNo) {
+        btnModalNo.addEventListener('click', () => {
+            console.log('❌ Usuario rechazó escalamiento');
+            if (confirmacionModal) confirmacionModal.classList.remove('active');
+            addBotMessage('Entendido. Seguiré aquí para ayudarte. ¿En qué más puedo asistirte?');
+            enviarMensajeProcesado('No quiero escalar');
+        });
+    }
+    
+    if (btnModalSi) {
+        btnModalSi.addEventListener('click', async () => {
+            console.log('✅ Usuario confirmó escalamiento');
+            if (confirmacionModal) confirmacionModal.classList.remove('active');
+            addBotMessage('Perfecto, te conectaré con un agente humano. Por favor espera...');
+            enviarMensajeProcesado('Sí, quiero hablar con un agente');
+        });
+    }
+
 
 
 
@@ -1262,6 +1285,18 @@ async function processStream(response) {
                             scrollToBottom();
                             break;
 
+                        case 'confirmacion_escalamiento_modal':
+                            console.log('🔔 Solicitud de confirmación de escalamiento (MODAL)');
+                            typingIndicator.classList.remove('active');
+                            
+                            // Mostrar modal de confirmación
+                            const confirmacionModal = document.getElementById('confirmacion-escalamiento-modal');
+                            if (confirmacionModal) {
+                                confirmacionModal.classList.add('active');
+                                console.log('✅ Modal de escalamiento mostrado');
+                            }
+                            break;
+
                         case 'token':
                         case 'chunk':
                             if (!currentBotMessageDiv) {
@@ -1961,4 +1996,10 @@ function incrementMessageCount() {
     }
 
     console.log(`📊 Mensajes: ${messageCount}/${MAX_MESSAGES_WITHOUT_EMAIL}`);
+}
+
+// 🔥 NUEVA FUNCIÓN: Enviar mensaje de respuesta a escalamiento
+function enviarMensajeProcesado(mensaje) {
+    chatInput.value = mensaje;
+    sendMessage();
 }

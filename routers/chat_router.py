@@ -106,6 +106,10 @@ async def chat_with_agent_stream(
         last_event_time = datetime.now()
         heartbeat_interval = 15
         
+        # 🔥 INICIALIZAR VARIABLES
+        conversation = None
+        agente = None
+        
         try:
 
             # ============================================
@@ -259,16 +263,40 @@ async def chat_with_agent_stream(
                     return
             else:
                 logger.info(f"⏭️ Sin visitante registrado, NO se creará conversación aún")
-
-
-
-
+            
             # ============================================
             # 🔥 PASO 0: VERIFICAR CONFIRMACIÓN PENDIENTE PRIMERO
             # ============================================
             tiene_pendiente = escalamiento_service.tiene_confirmacion_pendiente(payload.session_id)
             
             logger.info(f"🔍 Verificando confirmación pendiente: {tiene_pendiente} para session {payload.session_id}")
+            
+            # 🔥 SI HAY CONFIRMACIÓN PENDIENTE Y NO HAY CONVERSACIÓN, CREARLA AHORA
+            if tiene_pendiente and not conversation:
+                logger.info(f"🔧 CREANDO CONVERSACIÓN TEMPORAL PARA ESCALAMIENTO")
+                try:
+                    # Obtener agente si no lo tenemos
+                    if not agente:
+                        agente = db.query(AgenteVirtual).filter(
+                            AgenteVirtual.id_agente == payload.agent_id
+                        ).first()
+                    
+                    if agente:
+                        conversation_data = ConversationCreate(
+                            session_id=payload.session_id,
+                            id_agente=payload.agent_id,
+                            agent_name=agente.nombre_agente,
+                            agent_type=agente.tipo_agente,
+                            id_visitante=id_visitante,
+                            origin=payload.origin,
+                            ip_origen=ip_origen,
+                            user_agent=user_agent
+                        )
+                        conversation = await ConversationService.create_conversation(conversation_data)
+                        logger.info(f"✅ CONVERSACIÓN TEMPORAL CREADA PARA ESCALAMIENTO: {conversation.id}")
+                except Exception as e:
+                    logger.error(f"❌ Error creando conversación temporal: {e}")
+            
             # 🔥 LOGS DE DEBUG
             logger.info(f"=" * 80)
             logger.info(f"🔍 DEBUG CONFIRMACIÓN:")
@@ -277,7 +305,7 @@ async def chat_with_agent_stream(
             logger.info(f"   - tiene_pendiente: {tiene_pendiente}")
             logger.info(f"   - confirmaciones en memoria: {escalamiento_service._confirmaciones_pendientes}")
             logger.info(f"=" * 80)
-            
+
             
             if tiene_pendiente:
                 logger.info(f"⏳ HAY CONFIRMACIÓN PENDIENTE - Evaluando respuesta: '{payload.message}'")
@@ -481,21 +509,14 @@ Por favor responde claramente:
             if quiere_humano:
                 logger.info(f"🔔 Intención de escalamiento detectada: '{payload.message[:50]}...'")
                 
-                # Obtener nombre del agente
-                agente = db.query(AgenteVirtual).filter(
-                    AgenteVirtual.id_agente == payload.agent_id
-                ).first()
-                
-                agente_nombre = agente.nombre_agente if agente else "nuestro equipo"
-                
                 # Marcar como pendiente
                 escalamiento_service.marcar_confirmacion_pendiente(payload.session_id)
                 
-                # Enviar mensaje de confirmación
-                mensaje_confirmacion = escalamiento_service.obtener_mensaje_confirmacion(agente_nombre)
+                # Enviar MODAL de confirmación
+                modal_confirmacion = escalamiento_service.obtener_modal_confirmacion()
                 
-                yield f"data: {safe_json_dumps({'type': 'confirmacion_escalamiento', 'content': mensaje_confirmacion})}\n\n"
-                yield f"data: {safe_json_dumps({'type': 'done', 'content': mensaje_confirmacion})}\n\n"
+                yield f"data: {safe_json_dumps(modal_confirmacion)}\n\n"
+                yield f"data: {safe_json_dumps({'type': 'done'})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
             

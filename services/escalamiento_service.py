@@ -304,6 +304,14 @@ No hay problema. Sigo aquí para ayudarte.
 
 ¿En qué más puedo asistirte? 😊"""
 
+    def obtener_modal_confirmacion(self) -> dict:
+        """Estructura del modal de confirmación de escalamiento para el widget"""
+        return {
+            "type": "confirmacion_escalamiento_modal",
+            "titulo": "🤝 Hablar con un agente",
+            "descripcion": "¿Deseas conectar con un agente humano para recibir atención personalizada?"
+        }
+
     async def escalar_conversacion(
         self,
         session_id: str,
