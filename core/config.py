@@ -20,10 +20,10 @@ class Settings(BaseSettings):
     # ============================================
     #   BASE DE DATOS MYSQL
     # ============================================
-    DB_HOST: str = "localhost"
+    DB_HOST: str = "mysql"
     DB_PORT: int = 3306
     DB_USER: str = "root"
-    DB_PASSWORD: str = ""
+    DB_PASSWORD: str = "root123"
     DB_NAME: str = "chatbot_institucional"
     
     @property
@@ -67,19 +67,12 @@ class Settings(BaseSettings):
     @property
     def CORS_ORIGINS(self) -> List[str]:
         """Configuración de CORS según el ambiente"""
-        # CDN que necesita Swagger UI (usados en todos los ambientes)
-        cdn_origins = [
-            "https://cdn.jsdelivr.net",
-            "https://cdnjs.cloudflare.com",
-            "https://unpkg.com",
-        ]
-        
         if self.ENVIRONMENT == "production":
             # 🔒 Producción: Solo dominios específicos (HTTPS)
             return [
                 "https://app.tudominio.com",
                 "https://portal.tudominio.com",
-            ] + cdn_origins
+            ]
         elif self.ENVIRONMENT == "staging":
             # 🟡 Staging: Múltiples dominios HTTP y HTTPS
             return [
@@ -87,20 +80,10 @@ class Settings(BaseSettings):
                 "http://staging-app.tudominio.com",
                 "https://staging.tudominio.com",
                 "http://staging.tudominio.com",
-            ] + cdn_origins
+            ]
         else:
-            # 🟢 Desarrollo: Todos los localhost + CDN
-            return [
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "http://localhost:8000",
-                "https://localhost:8000",
-                "http://localhost:8081",
-                "http://127.0.0.1:8000",
-                "https://127.0.0.1:8000",
-                "http://127.0.0.1:8081",
-                "http://192.168.5.5:8081",  # IP local de desarrollo
-            ] + cdn_origins
+            # 🟢 Desarrollo: Permitir todos los orígenes (wildcard)
+            return ["*"]
     
     # ============================================
     #   GROQ (API IA REMOTA) - MODELO PRINCIPAL
@@ -126,7 +109,7 @@ class Settings(BaseSettings):
     # ============================================
     #   REDIS (CACHE)
     # ============================================
-    REDIS_HOST: str = "localhost"
+    REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str = ""
     REDIS_DB: int = 0

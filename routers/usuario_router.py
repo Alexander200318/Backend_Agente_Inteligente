@@ -194,8 +194,8 @@ class PasswordChange(BaseModel):
 @limiter.limit(f"{settings.RATE_LIMIT_LOGIN_PER_MINUTE}/minute")
 @router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
 async def login(
-    credentials: LoginRequest,
-    request: Request,
+    credentials: LoginRequest = None,
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """

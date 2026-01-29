@@ -106,7 +106,7 @@ def _init_roles_and_superadmin():
             nombre="super",
             apellido="admin",
             tipo_persona="administrativo",
-            email_personal="superadmin@localhost",
+            email_personal="superadmin@inst.edu.ec",
             cargo="Super Administrador del Sistema",
             estado="activo"
         )
@@ -117,7 +117,7 @@ def _init_roles_and_superadmin():
         usuario = Usuario(
             id_persona=persona.id_persona,
             username="superadmin",
-            email="superadmin@localhost",
+            email="superadmin@inst.edu.ec",
             password=get_password_hash("Admin123!"),
             estado="activo"
         )

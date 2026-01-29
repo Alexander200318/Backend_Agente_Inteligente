@@ -13,7 +13,7 @@ class AgentClassifier:
     def __init__(self, db: Session):
         self.db = db
         self.chroma = ChromaDBConfig()
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.embedder = SentenceTransformer("./hf_models/all-MiniLM-L6-v2")
         self.index_name = "agents_index"
         # crear colección si falta
         self.collection = self.chroma.get_or_create_collection(self.index_name)

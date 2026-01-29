@@ -130,6 +130,15 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ✅ Middleware que EXCLUYE OPTIONS del rate limiting
+@app.middleware("http")
+async def skip_rate_limit_for_options(request: Request, call_next):
+    """Saltarse rate limiting para solicitudes OPTIONS"""
+    if request.method == "OPTIONS":
+        # Marcar para saltarse rate limit
+        request.scope["rate_limit_exempt"] = True
+    return await call_next(request)
+
 
 # 🔥 NUEVO: Iniciar limpieza de sesiones en background
 import threading
@@ -157,6 +166,23 @@ except Exception as e:
 
 # ==================== MIDDLEWARE ====================
 
+# ✅ PRIMERO: Middleware para manejar preflight CORS OPTIONS (ANTES de rate limiting)
+@app.middleware("http")
+async def cors_options_middleware(request: Request, call_next):
+    """Manejar solicitudes OPTIONS de preflight CORS ANTES de rate limiting"""
+    if request.method == "OPTIONS":
+        return JSONResponse(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "3600",
+            }
+        )
+    return await call_next(request)
+
 # CORS - Configurado dinámicamente según el ambiente
 if settings.DEBUG:
     # Desarrollo: permitir CDN para Swagger UI
@@ -171,7 +197,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
-    max_age=600,
+    max_age=3600,
 )
 
 # 🔥 Middleware de seguridad - Headers HTTP seguros
