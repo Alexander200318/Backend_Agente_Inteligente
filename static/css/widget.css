@@ -549,30 +549,37 @@ body {
 
 /* Input area */
 #chat-input-area {
-    padding: 16px;
+    padding: 14px 16px;
     border-top: 1px solid #e9ecef;
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
+    background: linear-gradient(135deg, #fafbfc 0%, #ffffff 100%);
 }
 
 #chat-input {
     flex: 1;
     padding: 12px 16px;
-    border: 2px solid #e9ecef;
-    border-radius: 24px;
+    border: 1px solid #e9ecef;
+    border-radius: 20px;
     font-size: 14px;
     outline: none;
-    transition: border-color 0.2s;
+    transition: all 0.3s ease;
+    background: white;
+}
+
+#chat-input::placeholder {
+    color: #adb5bd;
 }
 
 #chat-input:focus {
     border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 #send-button {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border: none;
     border-radius: 50%;
@@ -581,16 +588,42 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 0.2s;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+#send-button::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+    transform: translate(-50%, -50%);
+    transition: width 0.4s ease, height 0.4s ease;
 }
 
 #send-button:hover {
     transform: scale(1.1);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+#send-button:hover::before {
+    width: 60px;
+    height: 60px;
+}
+
+#send-button:active {
+    transform: scale(0.95);
 }
 
 #send-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    transform: scale(1);
 }
 
 @media (max-width: 480px) {
@@ -1086,4 +1119,81 @@ body {
     height: 80%;
     object-fit: contain;
     display: block;
+}
+
+/* 🔥 NUEVO: Estilos mejorados para el botón del micrófono */
+#mic-button {
+    background: transparent;
+    border: 2px solid #e9ecef;
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    color: #6c757d;
+    position: relative;
+    overflow: visible;
+}
+
+#mic-button:hover {
+    border-color: #667eea;
+    color: #667eea;
+}
+
+#mic-button:active {
+    transform: scale(0.95);
+}
+
+/* Ondas de sonido animadas */
+.mic-wave {
+    position: absolute;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#mic-button.listening .mic-wave {
+    animation: soundWave 1.5s ease-out infinite;
+}
+
+.mic-wave-1 {
+    width: 44px;
+    height: 44px;
+    animation-delay: 0s;
+}
+
+.mic-wave-2 {
+    width: 44px;
+    height: 44px;
+    animation-delay: 0.5s;
+}
+
+.mic-wave-3 {
+    width: 44px;
+    height: 44px;
+    animation-delay: 1s;
+}
+
+@keyframes soundWave {
+    0% {
+        width: 44px;
+        height: 44px;
+        opacity: 1;
+    }
+    100% {
+        width: 80px;
+        height: 80px;
+        opacity: 0;
+    }
+}
+
+#mic-button.listening {
+    border-color: #667eea;
+    color: #667eea;
+    background: rgba(102, 126, 234, 0.08);
+    box-shadow: inset 0 0 8px rgba(102, 126, 234, 0.15);
 }

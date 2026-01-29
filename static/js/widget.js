@@ -4,6 +4,8 @@
 let websocket = null;
 let isEscalated = false;
 let humanAgentName = null;
+let escalamientoTimeout = null; // 🔥 NUEVO: Timeout para cerrar socket
+const ESCALAMIENTO_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos
 
 // 🔥 SISTEMA DE REGISTRO - SOLO EMAIL
 let messageCount = 0;
@@ -520,6 +522,14 @@ function initSpeechRecognition() {
 
     console.log('✅ [INIT] Elementos DOM encontrados correctamente');
 
+    // Detectar navegador
+    const isOpera = (!!window.opr && !!window.opr.addons) || !!window.opera || navigator.userAgent.indexOf(' OPR/') >= 0;
+    const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+    const isEdge = /Edg/.test(navigator.userAgent);
+    const isFirefox = /Firefox/.test(navigator.userAgent);
+    
+    console.log('🌐 [INIT] Navegador detectado:', { isOpera, isChrome, isEdge, isFirefox });
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
     console.log('🔍 [INIT] window.SpeechRecognition:', typeof window.SpeechRecognition);
@@ -532,7 +542,13 @@ function initSpeechRecognition() {
         micButton.title = 'Speech Recognition no disponible en este navegador';
         micButton.addEventListener('click', (e) => {
             e.preventDefault();
-            alert('❌ Tu navegador no soporta reconocimiento de voz. Usa Chrome, Edge o Safari.');
+            if (isOpera) {
+                alert('❌ Opera tiene soporte limitado para micrófono.\n\nUsa Chrome, Edge o Safari para esta función.');
+            } else if (isFirefox) {
+                alert('❌ Firefox no soporta Web Speech API.\n\nUsa Chrome, Edge o Safari.');
+            } else {
+                alert('❌ Tu navegador no soporta reconocimiento de voz.\n\nUsa Chrome, Edge o Safari.');
+            }
         });
         return;
     }
@@ -572,13 +588,11 @@ function initSpeechRecognition() {
 
         isListening = true;
         isStarting = false;
-        micButton.style.color = '#e74c3c';
-        micButton.style.backgroundColor = '#ffe6e6';
-        micButton.style.transform = 'scale(1.1)';
+        micButton.classList.add('listening');
 
         const feedbackDiv = document.createElement('div');
         feedbackDiv.id = 'voice-feedback';
-        feedbackDiv.style.cssText = 'text-align: center; padding: 10px; color: #e74c3c; font-size: 12px; animation: pulse 1s infinite;';
+        feedbackDiv.style.cssText = 'text-align: center; padding: 10px; color: #667eea; font-size: 12px; font-weight: 600;';
         feedbackDiv.innerHTML = '🎤 Escuchando... Habla ahora';
         chatMessages.appendChild(feedbackDiv);
         scrollToBottom();
@@ -642,9 +656,12 @@ function initSpeechRecognition() {
         console.log('⏰ [EVENT] Timestamp:', new Date().toLocaleTimeString());
         isListening = false;
         isStarting = false;
-        micButton.style.color = '';
-        micButton.style.backgroundColor = '';
-        micButton.style.transform = '';
+        micButton.classList.remove('listening');
+
+        if (startTimeout) {
+            clearTimeout(startTimeout);
+            startTimeout = null;
+        }
 
         const feedback = document.getElementById('voice-feedback');
         if (feedback) {
@@ -662,9 +679,12 @@ function initSpeechRecognition() {
 
         isListening = false;
         isStarting = false;
-        micButton.style.color = '';
-        micButton.style.backgroundColor = '';
-        micButton.style.transform = '';
+        micButton.classList.remove('listening');
+
+        if (startTimeout) {
+            clearTimeout(startTimeout);
+            startTimeout = null;
+        }
 
         const feedback = document.getElementById('voice-feedback');
         if (feedback) feedback.remove();
@@ -695,11 +715,19 @@ function initSpeechRecognition() {
                 errorIcon = '🌐';
                 errorMsg = 'Error de red. Verifica tu conexión a internet.';
                 break;
+            case 'service-not-allowed':
+                errorIcon = '⚙️';
+                errorMsg = 'El servicio de voz no está disponible.\n• Intenta recargar la página (F5)\n• Usa Chrome, Edge o Safari';
+                break;
+            case 'bad-grammar':
+                errorIcon = '⚙️';
+                errorMsg = 'Error en la configuración del reconocimiento.\n• Recarga la página (F5)';
+                break;
             case 'aborted':
                 console.log('ℹ️ [INFO] Reconocimiento abortado por el usuario');
                 return;
             default:
-                errorMsg = `Error desconocido: ${event.error}`;
+                errorMsg = `Error: ${event.error}`;
         }
 
         addBotMessage(`${errorIcon} ${errorMsg}`);
@@ -783,16 +811,17 @@ function startRecognition() {
         console.log('✅ [START] recognition.start() ejecutado sin errores');
 
         startTimeout = setTimeout(() => {
-            console.error('⏰ [TIMEOUT] No se recibió evento onstart en 3 segundos');
+            console.error('⏰ [TIMEOUT] No se recibió evento onstart en 5 segundos');
             console.log('🔍 [TIMEOUT] Estado - isListening:', isListening, 'isStarting:', isStarting);
 
             isStarting = false;
             isListening = false;
+            micButton.classList.remove('listening');
 
             try {
-                recognition.stop();
+                recognition.abort();
             } catch (e) {
-                console.log('ℹ️ [TIMEOUT] No se pudo detener (ya estaba detenido)');
+                console.log('ℹ️ [TIMEOUT] No se pudo abortar (ya estaba detenido)');
             }
 
             addBotMessage('⏰ El micrófono no respondió.\n\n' +
@@ -801,7 +830,7 @@ function startRecognition() {
                 '• El micrófono está deshabilitado en Windows\n' +
                 '• Intenta cerrar otras aplicaciones (Zoom, Teams, etc.)\n\n' +
                 'Prueba recargar la página (F5)');
-        }, 3000);
+        }, 5000);
 
     } catch (error) {
         console.error('❌ [START] Error al iniciar:', error);
@@ -814,6 +843,7 @@ function startRecognition() {
         }
 
         isStarting = false;
+        micButton.classList.remove('listening');
 
         if (error.message && error.message.includes('already started')) {
             console.log('⚠️ [START] Ya estaba iniciado, esperando a que termine...');
@@ -1414,6 +1444,11 @@ function connectWebSocket(sessionId) {
         return;
     }
 
+    // 🔥 NUEVO: Limpiar timeout anterior si existe
+    if (escalamientoTimeout) {
+        clearTimeout(escalamientoTimeout);
+    }
+
     // Detectar WebSocket URL automáticamente
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${wsProtocol}//${window.location.host}/ws/chat/${sessionId}`;
@@ -1428,6 +1463,14 @@ function connectWebSocket(sessionId) {
             type: 'join',
             role: 'user'
         }));
+
+        // 🔥 NUEVO: Establecer timeout para cerrar automáticamente
+        escalamientoTimeout = setTimeout(() => {
+            console.log('⏱️ Tiempo de escalamiento agotado, cerrando WebSocket');
+            cerrarWebSocket('Timeout de escalamiento');
+        }, ESCALAMIENTO_TIMEOUT_MS);
+
+        console.log(`⏰ Escalamiento abierto por ${ESCALAMIENTO_TIMEOUT_MS / 60000} minutos`);
     };
 
     websocket.onmessage = function (event) {
@@ -1477,17 +1520,7 @@ function connectWebSocket(sessionId) {
                 speakText(data.content);
 
                 setTimeout(() => {
-                    if (websocket) {
-                        websocket.close();
-                        websocket = null;
-                        isEscalated = false;
-                        humanAgentName = null;
-
-                        const indicator = document.getElementById('human-agent-indicator');
-                        if (indicator) indicator.remove();
-
-                        console.log('✅ WebSocket cerrado, volviendo a modo chat normal');
-                    }
+                    cerrarWebSocket('Finalización de escalamiento');
                 }, 2000);
                 break;
 
@@ -1533,6 +1566,37 @@ function sendMessageViaWebSocket(content) {
         type: 'message',
         content: content
     }));
+}
+
+// 🔥 NUEVO: Función para cerrar WebSocket correctamente
+function cerrarWebSocket(razon = 'Desconocida') {
+    console.log(`🔌 Cerrando WebSocket - Razón: ${razon}`);
+
+    // Limpiar timeout
+    if (escalamientoTimeout) {
+        clearTimeout(escalamientoTimeout);
+        escalamientoTimeout = null;
+    }
+
+    // Cerrar conexión
+    if (websocket) {
+        try {
+            websocket.close();
+        } catch (e) {
+            console.warn('Error al cerrar WebSocket:', e);
+        }
+        websocket = null;
+    }
+
+    // Reset estado
+    isEscalated = false;
+    humanAgentName = null;
+
+    // Remover indicador
+    const indicator = document.getElementById('human-agent-indicator');
+    if (indicator) indicator.remove();
+
+    console.log('✅ WebSocket cerrado correctamente, volviendo a modo chat normal');
 }
 
 function mostrarIndicadorEscalamiento(nombreHumano) {

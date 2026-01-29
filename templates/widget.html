@@ -74,12 +74,15 @@
         <!-- Input -->
         <div id="chat-input-area">
             <button id="mic-button" title="Hablar">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
                     <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                     <line x1="12" y1="19" x2="12" y2="23"/>
                     <line x1="8" y1="23" x2="16" y2="23"/>
                 </svg>
+                <span class="mic-wave mic-wave-1"></span>
+                <span class="mic-wave mic-wave-2"></span>
+                <span class="mic-wave mic-wave-3"></span>
             </button>
             <input type="text" id="chat-input" placeholder="Escribe tu mensaje...">
             <button id="send-button">
@@ -246,65 +249,10 @@
                         </button>
                     </form>
                 </div>
-
-
-
-
-
             </div>
         </div>
-
-
-
-
-
     </div>
-
-
-
-
-
-
-
     <script src="/static/js/widget.js"></script>
-    
-    <style>
-        /* Animación para el feedback de voz */
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-                transform: scale(1);
-            }
-            50% {
-                opacity: 0.6;
-                transform: scale(1.05);
-            }
-        }
-        
-        /* Estilos para el botón del micrófono */
-        #mic-button {
-            background: transparent;
-            border: 2px solid #e9ecef;
-            border-radius: 50%;
-            width: 44px;
-            height: 44px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            color: #495057;
-        }
-        
-        #mic-button:hover {
-            border-color: #667eea;
-            background: rgba(102, 126, 234, 0.1);
-            transform: scale(1.05);
-        }
-        
-        #mic-button:active {
-            transform: scale(0.95);
-        }
-    </style>
+
 </body>
 </html>
