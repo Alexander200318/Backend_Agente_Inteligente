@@ -171,32 +171,37 @@ except Exception as e:
 async def cors_options_middleware(request: Request, call_next):
     """Manejar solicitudes OPTIONS de preflight CORS ANTES de rate limiting"""
     if request.method == "OPTIONS":
+        origin = request.headers.get("origin", "*")
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "3600",
+        }
+        
+        # Solo agregar credentials si NO estamos usando wildcard
+        if origin != "*":
+            headers["Access-Control-Allow-Credentials"] = "true"
+        
         return JSONResponse(
             status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization",
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Max-Age": "3600",
-            }
+            content={},
+            headers=headers
         )
     return await call_next(request)
 
 # CORS - Configurado dinámicamente según el ambiente
-if settings.DEBUG:
-    # Desarrollo: permitir CDN para Swagger UI
-    cors_origins = settings.CORS_ORIGINS
-else:
-    # Producción: restringido y sin docs públicos
-    cors_origins = settings.CORS_ORIGINS
+cors_origins = settings.CORS_ORIGINS
+
+print(f"✅ CORS Configuration: {cors_origins}")
+print(f"✅ ENVIRONMENT: {settings.ENVIRONMENT}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["*"],
     max_age=3600,
 )
 

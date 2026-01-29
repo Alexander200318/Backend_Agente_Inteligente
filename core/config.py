@@ -83,7 +83,17 @@ class Settings(BaseSettings):
             ]
         else:
             # 🟢 Desarrollo: Permitir todos los orígenes (wildcard)
-            return ["*"]
+            return [ 
+                "http://localhost:3000",
+                "http://localhost:8081",
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:8081",
+                "http://64.23.152.92:3000",
+                "http://64.23.152.92:8081",
+                "http://64.23.152.92:19000",
+                "http://64.23.152.92:19001",
+                "http://64.23.152.92:19002",
+             ]
     
     # ============================================
     #   GROQ (API IA REMOTA) - MODELO PRINCIPAL
