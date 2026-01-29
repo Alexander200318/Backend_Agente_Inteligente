@@ -3,10 +3,13 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy import func, and_
 from typing import Optional, List
 from datetime import datetime, timedelta
+import logging
 from models.visitante_anonimo import VisitanteAnonimo
 from models.conversacion_sync import ConversacionSync
 from schemas.visitante_anonimo_schemas import VisitanteAnonimoCreate, VisitanteAnonimoUpdate
 from exceptions.base import *
+
+logger = logging.getLogger(__name__)
 
 class VisitanteAnonimoRepository:
     def __init__(self, db: Session):
@@ -92,8 +95,18 @@ class VisitanteAnonimoRepository:
         try:
             visitante = self.get_by_id(id_visitante)
             
+            # Lista de campos válidos en el modelo
+            valid_fields = {
+                'identificador_sesion', 'ip_origen', 'user_agent', 'dispositivo',
+                'navegador', 'sistema_operativo', 'pais', 'ciudad', 'ultima_visita',
+                'total_conversaciones', 'total_mensajes', 'canal_acceso', 'nombre',
+                'apellido', 'edad', 'ocupacion', 'pertenece_instituto',
+                'satisfaccion_estimada', 'email'
+            }
+            
             for field, value in visitante_data.dict(exclude_unset=True).items():
-                if value is not None:  # ← Solo actualizar si no es None
+                # Solo actualizar si el valor no es None y el campo existe en el modelo
+                if value is not None and field in valid_fields:
                     setattr(visitante, field, value)
 
             visitante.ultima_visita = datetime.utcnow()
@@ -103,7 +116,12 @@ class VisitanteAnonimoRepository:
             return visitante
         except SQLAlchemyError as e:
             self.db.rollback()
+            logger.error(f"❌ Error al actualizar visitante: {str(e)}")
             raise DatabaseException(f"Error al actualizar visitante: {str(e)}")
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"❌ Error inesperado al actualizar visitante: {str(e)}")
+            raise DatabaseException(f"Error inesperado: {str(e)}")
     
     # 🔥 NUEVO - Actualizar solo satisfacción
     def actualizar_satisfaccion(self, id_visitante: int, satisfaccion: int) -> VisitanteAnonimo:

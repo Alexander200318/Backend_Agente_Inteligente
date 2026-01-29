@@ -350,11 +350,11 @@ async def chat_with_agent_stream(
                                 # 🔥 MENSAJE VISIBLE EN EL WIDGET
                                 mensaje_no_disponibles = (
                                     "⚠️ **No hay encargados disponibles en este momento**\n\n"
-                                    "Lamentablemente, no hay personal disponible para atenderte ahora.\n\n"
+                                    "Lamentablemente, **no hay personal disponible** para atenderte ahora.\n\n"
                                     "**Opciones:**\n"
-                                    "• Intenta nuevamente más tarde\n"
-                                    "• Contáctanos por otros medios\n"
-                                    "• Puedo seguir ayudándote aquí\n\n"
+                                    "**/intentar nuevamente más tarde**\n"
+                                    "**/contactar por otros medios**\n"
+                                    "**/continuar aquí conmigo**\n\n"
                                     "Disculpa las molestias. 🙏"
                                 )
                                 
@@ -379,10 +379,8 @@ async def chat_with_agent_stream(
 
                         mensaje_escalamiento = (
                             f"🔔 **Conectado con atención humana**\n\n"
-                            f"{nombre_funcionario} te atenderá en breve.\n\n"
-                            f"💡 **Tip:** Si deseas volver al agente virtual, escribe:\n"
-                            f"• \"Finalizar escalamiento\"\n"
-                            f"• \"Volver al bot\""
+                            f"**{nombre_funcionario}** te atenderá en breve.\n\n"
+                            f"💡 Si deseas volver al agente virtual en cualquier momento, solo **escribe:** finalizar escalamiento o volver al bot"
                         )
 
                         evento_escalamiento = {
@@ -462,8 +460,8 @@ Por favor responde claramente:
                         # ✅ FINALIZACIÓN EXITOSA
                         mensaje_finalizacion = (
                             "✅ **Escalamiento finalizado**\n\n"
-                            "Has vuelto a chatear conmigo (agente virtual).\n\n"
-                            "¿En qué más puedo ayudarte? 😊"
+                            "**Has vuelto al agente virtual.** Ahora puedes continuar tu conversación normalmente. 😊\n\n"
+                            "**Recuerda:** Desde ahora tus mensajes serán procesados por la IA."
                         )
                         
                         # 🔥 ENVIAR MENSAJE AL WIDGET (con efecto de escritura)

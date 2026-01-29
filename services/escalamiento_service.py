@@ -290,19 +290,35 @@ Responde:
     
     def obtener_mensaje_confirmado(self) -> str:
         """Mensaje cuando el usuario confirma"""
-        return """✅ **Perfecto, conectando...**
+        return """🔔 **Conectado con atención humana**
 
-Un momento mientras encuentro a un agente disponible.
+Un agente especializado se conectará contigo en breve. **Por favor espera...**
 
-⏳ Espera por favor..."""
+💡 Si deseas volver al agente virtual en cualquier momento, solo **escribe:** finalizar escalamiento o volver al bot"""
     
     def obtener_mensaje_cancelado(self) -> str:
         """Mensaje cuando el usuario cancela"""
-        return """❌ **Entendido**
+        return """✅ **Seguimos aquí para ayudarte**
 
-No hay problema. Sigo aquí para ayudarte.
+Entendido, **continuaremos resolviendo tu problema** juntos.
 
 ¿En qué más puedo asistirte? 😊"""
+
+    def obtener_mensaje_escalamiento_activo(self, nombre_agente: str) -> str:
+        """Mensaje cuando el escalamiento está activo y el agente se conecta"""
+        return f"""🔔 **Conectado con atención humana**
+
+**{nombre_agente}** te atenderá en breve.
+
+💡 Si deseas volver al agente virtual en cualquier momento, solo **escribe:** finalizar escalamiento o volver al bot"""
+
+    def obtener_mensaje_finalizacion_escalamiento(self) -> str:
+        """Mensaje cuando se finaliza el escalamiento"""
+        return """✅ **Escalamiento finalizado**
+
+**Has vuelto al agente virtual.** Ahora puedes continuar tu conversación normalmente. 😊
+
+**Recuerda:** Desde ahora tus mensajes serán procesados por la IA."""
 
     def obtener_modal_confirmacion(self) -> dict:
         """Estructura del modal de confirmación de escalamiento para el widget"""

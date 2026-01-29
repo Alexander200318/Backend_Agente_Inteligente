@@ -1648,8 +1648,19 @@ function escapeHtml(text) {
 
 function formatBotMessage(text) {
     text = escapeHtml(text);
+    
+    // Procesar markdown: **texto** -> <strong>texto</strong>
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    
+    // Procesar cursiva: *texto* -> <em>texto</em>
+    text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    
+    // Procesar saltos de línea
     text = text.replace(/\n/g, '<br>');
+    
+    // Procesar URLs
     text = text.replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: #667eea; text-decoration: underline;">$1</a>');
+    
     return text;
 }
 
