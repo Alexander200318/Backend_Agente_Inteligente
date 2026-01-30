@@ -1,5 +1,5 @@
 # app/routers/agentes_router.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database.database import get_db
 from services.agent_classifier import AgentClassifier
@@ -9,14 +9,14 @@ from models.agente_virtual import AgenteVirtual
 
 router = APIRouter(prefix="/agentes", tags=["Agentes"])
 
-@router.post("/{id_agente}/reindex")
-def reindex_agent(id_agente: int, db: Session = Depends(get_db)):
+@router.post("/{id_agente}/reindex", status_code=status.HTTP_200_OK)
+async def reindex_agent(id_agente: int, db: Session = Depends(get_db)):
     rag = RAGService(db)
     res = rag.reindex_agent(id_agente)
     return res
 
-@router.post("/{id_agente}/build_model")
-def build_agent_model(id_agente: int, db: Session = Depends(get_db)):
+@router.post("/{id_agente}/build_model", status_code=status.HTTP_200_OK)
+async def build_agent_model(id_agente: int, db: Session = Depends(get_db)):
     service = GroqAgentService(db)
     try:
         result = service.crear_o_actualizar_modelo(id_agente)
@@ -24,14 +24,14 @@ def build_agent_model(id_agente: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/rebuild_agents_index")
-def rebuild_agents_index(db: Session = Depends(get_db)):
+@router.post("/rebuild_agents_index", status_code=status.HTTP_200_OK)
+async def rebuild_agents_index(db: Session = Depends(get_db)):
     classifier = AgentClassifier(db)
     return classifier.build_index()
 
 # 🔥 CORREGIDO: Quitar /agentes/ del path
-@router.get("/{id_agente}/welcome")
-def get_agent_welcome(id_agente: int, db: Session = Depends(get_db)):
+@router.get("/{id_agente}/welcome", status_code=status.HTTP_200_OK)
+async def get_agent_welcome(id_agente: int, db: Session = Depends(get_db)):
     """Obtiene mensaje de bienvenida de un agente"""
     agente = db.query(AgenteVirtual).filter(
         AgenteVirtual.id_agente == id_agente
@@ -51,8 +51,8 @@ def get_agent_welcome(id_agente: int, db: Session = Depends(get_db)):
 
 # Agregar en routes/agentes_router.py
 
-@router.post("/reindex-all")
-def reindex_all_agents(db: Session = Depends(get_db)):
+@router.post("/reindex-all", status_code=status.HTTP_200_OK)
+async def reindex_all_agents(db: Session = Depends(get_db)):
     """
     Re-indexa TODOS los agentes del sistema
     Útil después de actualizar la estructura de metadata
