@@ -70,8 +70,10 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "production":
             # 🔒 Producción: Solo dominios específicos (HTTPS)
             return [
-                "https://app.tudominio.com",
-                "https://portal.tudominio.com",
+                "https://engine-tecai.me",
+                "https://www.engine-tecai.me",
+                "http://engine-tecai.me",
+                "http://www.engine-tecai.me",
             ]
         elif self.ENVIRONMENT == "staging":
             # 🟡 Staging: Múltiples dominios HTTP y HTTPS
@@ -83,7 +85,7 @@ class Settings(BaseSettings):
             ]
         else:
             # 🟢 Desarrollo: Permitir todos los orígenes (wildcard)
-            return [ 
+            return [
                 "http://localhost:3000",
                 "http://localhost:8081",
                 "http://127.0.0.1:3000",
@@ -93,8 +95,11 @@ class Settings(BaseSettings):
                 "http://64.23.152.92:19000",
                 "http://64.23.152.92:19001",
                 "http://64.23.152.92:19002",
-             ]
-    
+                "https://engine-tecai.me",
+                "https://www.engine-tecai.me",
+                "http://engine-tecai.me",
+                "http://www.engine-tecai.me",
+            ]
     # ============================================
     #   GROQ (API IA REMOTA) - MODELO PRINCIPAL
     # ============================================

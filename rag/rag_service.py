@@ -28,8 +28,8 @@ class RAGService:
         # 🔥 Ruta fija a los modelos locales (los que descargaste con download_hf_models.py)
         BASE_DIR = Path(__file__).resolve().parent.parent   # .../Backend_Agente_Inteligente/app
         HF_MODELS_DIR = BASE_DIR / "hf_models"
-        self._EMBEDDER_DIR = HF_MODELS_DIR / "all-MiniLM-L6-v2"
-        self._RERANKER_DIR = HF_MODELS_DIR / "ms-marco-MiniLM-L-6-v2"
+        self._EMBEDDER_DIR = "all-MiniLM-L6-v2"
+        self._RERANKER_DIR = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
         # 🔥 Cargar modelos SOLO una vez
         if not RAGService._models_loaded:
