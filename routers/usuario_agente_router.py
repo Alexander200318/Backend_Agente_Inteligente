@@ -9,30 +9,7 @@ from fastapi import APIRouter, Depends, status
 
 router = APIRouter(prefix="/usuario-agente", tags=["Usuario-Agente"])
 
-@router.post("/", response_model=UsuarioAgenteResponse, status_code=status.HTTP_201_CREATED)
-def asignar_usuario_agente(data: UsuarioAgenteCreate, db: Session = Depends(get_db)):
-    service = UsuarioAgenteService(db)
-    return service.asignar_usuario_agente(data)
-
-@router.get("/usuario/{id_usuario}", response_model=List[UsuarioAgenteResponse])
-def listar_agentes_usuario(id_usuario: int, activo: Optional[bool] = None, db: Session = Depends(get_db)):
-    service = UsuarioAgenteService(db)
-    return service.listar_por_usuario(id_usuario, activo)
-
-@router.get("/agente/{id_agente}", response_model=List[UsuarioAgenteResponse])
-def listar_usuarios_agente(id_agente: int, activo: Optional[bool] = None, db: Session = Depends(get_db)):
-    service = UsuarioAgenteService(db)
-    return service.listar_por_agente(id_agente, activo)
-
-@router.put("/{id_usuario_agente}", response_model=UsuarioAgenteResponse)
-def actualizar_permisos(id_usuario_agente: int, data: UsuarioAgenteUpdate, db: Session = Depends(get_db)):
-    service = UsuarioAgenteService(db)
-    return service.actualizar_permisos(id_usuario_agente, data)
-
-@router.delete("/{id_usuario_agente}", status_code=status.HTTP_200_OK)
-def revocar_acceso(id_usuario_agente: int, db: Session = Depends(get_db)):
-    service = UsuarioAgenteService(db)
-    return service.revocar_acceso(id_usuario_agente)
+# ✅ RUTAS ESPECÍFICAS PRIMERO (más específicas deben estar antes)
 
 # Verificar permisos de un usuario sobre un agente específico
 @router.get("/verificar/{id_usuario}/{id_agente}", status_code=status.HTTP_200_OK)
@@ -104,20 +81,37 @@ def obtener_permisos_usuario_agente(
     """
     Obtiene los permisos de un usuario sobre un agente específico.
     Retorna la asignación completa con todos los permisos.
+    
+    Si no existe asignación, retorna un objeto con permisos vacíos (para permitir crear)
     """
     service = UsuarioAgenteService(db)
     asignacion = service.obtener_por_usuario_agente(id_usuario, id_agente)
     
     if not asignacion:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró asignación para usuario {id_usuario} y agente {id_agente}"
-        )
+        # Retornar estructura vacía para permitir crear nueva asignación
+        return {
+            "id_usuario_agente": None,
+            "id_usuario": id_usuario,
+            "id_agente": id_agente,
+            "puede_ver_contenido": False,
+            "puede_crear_contenido": False,
+            "puede_editar_contenido": False,
+            "puede_eliminar_contenido": False,
+            "puede_publicar_contenido": False,
+            "puede_ver_metricas": False,
+            "puede_exportar_datos": False,
+            "puede_configurar_agente": False,
+            "puede_gestionar_permisos": False,
+            "puede_gestionar_categorias": False,
+            "puede_gestionar_widgets": False,
+            "activo": False,
+            "fecha_asignacion": None,
+            "is_new": True  # Flag para indicar que es una nueva asignación
+        }
     
     return asignacion
 
-
-# Actualizar permisos de un usuario para un agente específico
+# Actualizar permisos de un usuario para un agente específico (UPSERT)
 @router.put("/usuario/{id_usuario}/agente/{id_agente}", response_model=UsuarioAgenteResponse)
 def actualizar_permisos_usuario_agente(
     id_usuario: int,
@@ -127,19 +121,36 @@ def actualizar_permisos_usuario_agente(
 ):
     """
     Actualiza los permisos de un usuario sobre un agente específico.
-    Permite modificar permisos individuales sin conocer el id_usuario_agente.
+    Si no existe la asignación, la crea automáticamente (UPSERT).
     """
     service = UsuarioAgenteService(db)
-    asignacion_actualizada = service.actualizar_por_usuario_agente(id_usuario, id_agente, data)
     
-    if not asignacion_actualizada:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No se encontró asignación para usuario {id_usuario} y agente {id_agente}"
+    # Intentar obtener asignación existente
+    asignacion_existente = service.obtener_por_usuario_agente(id_usuario, id_agente)
+    
+    if asignacion_existente:
+        # Si existe, actualizar
+        asignacion_actualizada = service.actualizar_por_usuario_agente(id_usuario, id_agente, data)
+        return asignacion_actualizada
+    else:
+        # Si no existe, crear nueva asignación con los permisos
+        nueva_asignacion = UsuarioAgenteCreate(
+            id_usuario=id_usuario,
+            id_agente=id_agente,
+            puede_ver_contenido=data.puede_ver_contenido if data.puede_ver_contenido is not None else True,
+            puede_crear_contenido=data.puede_crear_contenido if data.puede_crear_contenido is not None else True,
+            puede_editar_contenido=data.puede_editar_contenido if data.puede_editar_contenido is not None else True,
+            puede_eliminar_contenido=data.puede_eliminar_contenido if data.puede_eliminar_contenido is not None else False,
+            puede_publicar_contenido=data.puede_publicar_contenido if data.puede_publicar_contenido is not None else False,
+            puede_ver_metricas=data.puede_ver_metricas if data.puede_ver_metricas is not None else True,
+            puede_exportar_datos=data.puede_exportar_datos if data.puede_exportar_datos is not None else False,
+            puede_configurar_agente=data.puede_configurar_agente if data.puede_configurar_agente is not None else False,
+            puede_gestionar_permisos=data.puede_gestionar_permisos if data.puede_gestionar_permisos is not None else False,
+            puede_gestionar_categorias=data.puede_gestionar_categorias if data.puede_gestionar_categorias is not None else False,
+            puede_gestionar_widgets=data.puede_gestionar_widgets if data.puede_gestionar_widgets is not None else False,
         )
-    
-    return asignacion_actualizada
-
+        asignacion_creada = service.asignar_usuario_agente(nueva_asignacion)
+        return asignacion_creada
 
 # Eliminar permanentemente una asignación
 @router.delete("/usuario/{id_usuario}/agente/{id_agente}", status_code=status.HTTP_200_OK)
@@ -164,3 +175,30 @@ def eliminar_asignacion_usuario_agente(
         "message": f"Asignación eliminada: Usuario {id_usuario} - Agente {id_agente}",
         "data": resultado
     }
+
+# ✅ RUTAS GENÉRICAS DESPUÉS (menos específicas)
+
+@router.post("/", response_model=UsuarioAgenteResponse, status_code=status.HTTP_201_CREATED)
+def asignar_usuario_agente(data: UsuarioAgenteCreate, db: Session = Depends(get_db)):
+    service = UsuarioAgenteService(db)
+    return service.asignar_usuario_agente(data)
+
+@router.get("/usuario/{id_usuario}", response_model=List[UsuarioAgenteResponse])
+def listar_agentes_usuario(id_usuario: int, activo: Optional[bool] = None, db: Session = Depends(get_db)):
+    service = UsuarioAgenteService(db)
+    return service.listar_por_usuario(id_usuario, activo)
+
+@router.get("/agente/{id_agente}", response_model=List[UsuarioAgenteResponse])
+def listar_usuarios_agente(id_agente: int, activo: Optional[bool] = None, db: Session = Depends(get_db)):
+    service = UsuarioAgenteService(db)
+    return service.listar_por_agente(id_agente, activo)
+
+@router.put("/{id_usuario_agente}", response_model=UsuarioAgenteResponse)
+def actualizar_permisos(id_usuario_agente: int, data: UsuarioAgenteUpdate, db: Session = Depends(get_db)):
+    service = UsuarioAgenteService(db)
+    return service.actualizar_permisos(id_usuario_agente, data)
+
+@router.delete("/{id_usuario_agente}", status_code=status.HTTP_200_OK)
+def revocar_acceso(id_usuario_agente: int, db: Session = Depends(get_db)):
+    service = UsuarioAgenteService(db)
+    return service.revocar_acceso(id_usuario_agente)

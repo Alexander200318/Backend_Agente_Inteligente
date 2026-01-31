@@ -37,11 +37,11 @@ class UsuarioAgenteUpdate(BaseModel):
     activo: Optional[bool] = None
 
 class UsuarioAgenteResponse(UsuarioAgenteBase):
-    id_usuario_agente: int
+    id_usuario_agente: Optional[int] = None
     id_usuario: int
     id_agente: int
-    fecha_asignacion: datetime
-    activo: bool
+    fecha_asignacion: Optional[datetime] = None
+    activo: bool = True
     
     class Config:
         from_attributes = True

@@ -29,6 +29,36 @@ async def rebuild_agents_index(db: Session = Depends(get_db)):
     classifier = AgentClassifier(db)
     return classifier.build_index()
 
+# 🔥 CRÍTICO: Ruta GET "/" para listar agentes (ARREGLADO 30-Jan-2026)
+@router.get("/", status_code=status.HTTP_200_OK)
+async def listar_agentes(
+    skip: int = 0, 
+    limit: int = 1000, 
+    db: Session = Depends(get_db)
+):
+    """Obtiene lista de todos los agentes disponibles"""
+    try:
+        agentes = db.query(AgenteVirtual).filter(
+            AgenteVirtual.activo == True
+        ).offset(skip).limit(limit).all()
+        
+        return {
+            "ok": True,
+            "total": len(agentes),
+            "agentes": [
+                {
+                    "id_agente": a.id_agente,
+                    "nombre_agente": a.nombre_agente,
+                    "descripcion": a.descripcion,
+                    "activo": a.activo,
+                    "mensaje_bienvenida": a.mensaje_bienvenida
+                }
+                for a in agentes
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listando agentes: {str(e)}")
+
 # 🔥 CORREGIDO: Quitar /agentes/ del path
 @router.get("/{id_agente}/welcome", status_code=status.HTTP_200_OK)
 async def get_agent_welcome(id_agente: int, db: Session = Depends(get_db)):

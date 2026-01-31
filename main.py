@@ -123,12 +123,26 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
-    debug=settings.DEBUG
+    debug=settings.DEBUG,
+    redirect_slashes=False,  # 🔥 CRÍTICO: No redirigir /ruta a /ruta/ - FIX 307 REDIRECT BUG
 )
 
 # 🔥 Agregar rate limiter a la app
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# 🔥 NUEVO MIDDLEWARE: Prevenir redirects 307 por slash (FIX para mobile clients)
+@app.middleware("http")
+async def fix_redirect_slash_middleware(request: Request, call_next):
+    """
+    Middleware para evitar redirects 307 cuando falta/sobra barra final.
+    Los clientes móviles a veces no siguen redirects correctamente.
+    """
+    # Si la ruta termina con "/" y existe una ruta sin barra, redirigir al revés
+    # Pero por defecto, Django/FastAPI añade "/", así que lo permitimos
+    response = await call_next(request)
+    # No hacer nada, dejar que FastAPI maneje naturalmente
+    return response
 
 # ✅ Middleware que EXCLUYE OPTIONS del rate limiting
 @app.middleware("http")

@@ -729,7 +729,7 @@ async def crear_usuario(
         )
 
 
-@router.get("", status_code=status.HTTP_200_OK)
+@router.get("/", status_code=status.HTTP_200_OK)  # 🔥 ARREGLADO: Cambiar "" a "/" para evitar redirect
 async def listar_usuarios(
     skip: int = 0,
     limit: int = 100,
