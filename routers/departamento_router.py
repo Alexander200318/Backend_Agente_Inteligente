@@ -46,24 +46,22 @@ def crear_departamento(
 @router.get(
     "/",
     response_model=List[DepartamentoResponse],
-    summary="Listar departamentos",
-    description="Obtiene listado de departamentos con filtros opcionales"
+    summary="Listar departamentos (PÚBLICO)",
+    description="Obtiene listado de departamentos con filtros opcionales - Sin autenticación requerida"
 )
 def listar_departamentos(
     skip: int = Query(0, ge=0, description="Registros a saltar"),
     limit: int = Query(100, ge=1, le=500, description="Límite de registros"),
     activo: Optional[bool] = Query(None, description="Filtrar por estado"),
     facultad: Optional[str] = Query(None, description="Filtrar por facultad"),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 NUEVO
+    db: Session = Depends(get_db)
 ):
     """
-    Listar departamentos:
+    Listar departamentos (ENDPOINT PÚBLICO):
     - Ordenados alfabéticamente por nombre
     - Con paginación
     - Filtros opcionales por estado y facultad
-    
-    🔒 Requiere autenticación
+    - ✅ No requiere autenticación
     """
     service = DepartamentoService(db)
     return service.listar_departamentos(skip, limit, activo, facultad)

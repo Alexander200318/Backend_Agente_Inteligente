@@ -204,6 +204,24 @@ async def cors_options_middleware(request: Request, call_next):
         )
     return await call_next(request)
 
+# 🔥 SEGUNDO: Middleware para agregar CORS headers a TODAS las respuestas
+@app.middleware("http")
+async def cors_headers_middleware(request: Request, call_next):
+    """Agregar headers CORS a TODAS las respuestas (incluyendo errores)"""
+    response = await call_next(request)
+    
+    origin = request.headers.get("origin")
+    cors_origins = settings.CORS_ORIGINS
+    
+    # Verificar si el origen está permitido
+    if origin and (origin in cors_origins or "*" in cors_origins):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return response
+
 # CORS - Configurado dinámicamente según el ambiente
 cors_origins = settings.CORS_ORIGINS
 

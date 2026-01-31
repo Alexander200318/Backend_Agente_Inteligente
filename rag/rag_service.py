@@ -13,6 +13,10 @@ import uuid
 import json
 import hashlib
 import torch
+import traceback
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RAGService:
@@ -37,39 +41,51 @@ class RAGService:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             print(f"🚀 Inicializando modelos RAG (solo primera vez) en device: {device}")
 
-            # ====== EMBEDDER DESDE CARPETA LOCAL ======
+            # 🔥 CAMBIO: Usar modelos desde HuggingFace cache (offline)
+            # El environment variable HF_HUB_OFFLINE=1 ya está configurado
+            # Así que SentenceTransformer intentará cargar desde cache
+            
+            # ====== EMBEDDER ======
             try:
-                print(f"📦 Cargando embedder desde ruta local: {EMBEDDER_PATH}")
+                print(f"📦 Cargando embedder: all-MiniLM-L6-v2 (modo offline)")
                 RAGService._embedder = SentenceTransformer(
-                    str(EMBEDDER_PATH),
+                    "all-MiniLM-L6-v2",
                     device=device,
-                    cache_folder=str(HF_MODELS_DIR)
+                    cache_folder="/app/.cache",
+                    local_files_only=False  # Intentar cache primero
                 )
-                print("✅ Embedder cargado desde disco.")
+                print("✅ Embedder cargado exitosamente.")
             except Exception as e:
-                print(f"⚠️  No se pudo cargar el modelo de embeddings desde {EMBEDDER_PATH}")
-                print(f"   La funcionalidad RAG estará deshabilitada.")
-                print(f"   Detalle: {e}")
+                print(f"❌ Error cargando embedder: {e}")
+                print(f"📋 Detalle del error:")
+                traceback.print_exc()
                 RAGService._embedder = None
                 self._rag_available = False
 
-            # ====== RERANKER DESDE CARPETA LOCAL ======
+            # ====== RERANKER ======
             try:
-                print(f"📦 Cargando reranker desde ruta local: {RERANKER_PATH}")
+                print(f"📦 Cargando reranker: ms-marco-MiniLM-L-6-v2 (modo offline)")
                 RAGService._reranker = CrossEncoder(
-                    str(RERANKER_PATH),
+                    "cross-encoder/ms-marco-MiniLM-L-6-v2",
                     device=device,
-                    cache_folder=str(HF_MODELS_DIR)
+                    cache_folder="/app/.cache",
+                    local_files_only=False  # Intentar cache primero
                 )
-                print("✅ Reranker cargado desde disco.")
+                print("✅ Reranker cargado exitosamente.")
             except Exception as e:
-                print(f"⚠️  No se pudo cargar el modelo de re-ranking desde {RERANKER_PATH}")
-                print(f"   La funcionalidad RAG estará deshabilitada.")
-                print(f"   Detalle: {e}")
+                print(f"❌ Error cargando reranker: {e}")
+                print(f"📋 Detalle del error:")
+                traceback.print_exc()
                 RAGService._reranker = None
                 self._rag_available = False
 
             RAGService._models_loaded = True
+            
+            # 🔥 Verificar si los modelos se cargaron correctamente
+            if RAGService._embedder and RAGService._reranker:
+                print("✅✅✅ ¡Todos los modelos cargados exitosamente! ✅✅✅")
+            else:
+                print("❌❌❌ FALLO: No se pudieron cargar todos los modelos ❌❌❌")
 
         # Usar las instancias compartidas de clase
         self.embedder = RAGService._embedder
@@ -161,11 +177,12 @@ class RAGService:
     ) -> List[Dict]:
         """
         Busca documentos relevantes con caché Redis y boost de prioridad
+        Si RAG no está disponible, busca en BD con FULLTEXT SEARCH
         """
-        # 🔥 Si RAG no está disponible, retornar lista vacía
+        # 🔥 Si RAG no está disponible, hacer búsqueda FALLBACK en BD
         if not self.embedder:
-            print(f"⚠️  RAG no disponible, retornando resultados vacíos para búsqueda")
-            return []
+            print(f"⚠️  RAG no disponible, usando búsqueda FALLBACK en BD...")
+            return self._search_in_database(id_agente, query, n_results, incluir_inactivos)
             
         cache_key = self._get_cache_key(id_agente, query, n_results, use_reranking)
         cached_results = self._get_from_cache(cache_key)
@@ -462,6 +479,11 @@ class RAGService:
     def reindex_agent(self, id_agente: int) -> Dict:
         """Re-indexa TODO el contenido de un agente"""
         
+        # 🔥 Si RAG no está disponible, retorna silenciosamente
+        if not self._rag_available or self.embedder is None:
+            print(f"⚠️  RAG no disponible, skipping indexing para agente {id_agente}")
+            return {"ok": False, "mensaje": "RAG no disponible"}
+        
         print(f"🔄 Limpiando caché del agente {id_agente}...")
         self.clear_cache(id_agente)
         
@@ -752,3 +774,81 @@ class RAGService:
                 "error": str(e),
                 "vectores_actualizados": 0
         }
+
+    def _search_in_database(
+        self, 
+        id_agente: int, 
+        query: str, 
+        n_results: int = 3,
+        incluir_inactivos: bool = False
+    ) -> List[Dict]:
+        """
+        Búsqueda de fallback en BD cuando RAG no está disponible.
+        Usa FULLTEXT SEARCH o búsqueda por coincidencia de texto simple.
+        """
+        try:
+            from sqlalchemy import or_, and_
+            
+            print(f"🔍 Buscando en BD: agente={id_agente}, query='{query[:50]}...'")
+            
+            # Preparar palabras clave
+            keywords = query.split()
+            
+            # Construir condiciones de búsqueda
+            search_conditions = or_(
+                *[
+                    or_(
+                        UnidadContenido.titulo.ilike(f"%{kw}%"),
+                        UnidadContenido.contenido.ilike(f"%{kw}%"),
+                        UnidadContenido.resumen.ilike(f"%{kw}%")
+                    )
+                    for kw in keywords
+                ]
+            )
+            
+            # Filtro base
+            base_filter = and_(
+                UnidadContenido.id_agente == id_agente,
+                search_conditions
+            )
+            
+            # Agregar filtro de estado si es necesario
+            if not incluir_inactivos:
+                base_filter = and_(
+                    base_filter,
+                    UnidadContenido.estado.in_(["activo", "publicado"]),
+                    UnidadContenido.eliminado == False
+                )
+            
+            # Ejecutar búsqueda
+            unidades = self.db.query(UnidadContenido).filter(base_filter).limit(n_results * 2).all()
+            
+            results = []
+            for unidad in unidades[:n_results]:
+                results.append({
+                    "id": f"db_{unidad.id_contenido}",
+                    "document": unidad.contenido or unidad.titulo,
+                    "metadata": {
+                        "id_contenido": unidad.id_contenido,
+                        "titulo": unidad.titulo,
+                        "prioridad": getattr(unidad, 'prioridad', 5),
+                        "tipo": "unidad_contenido",
+                        "activo": unidad.estado in ["activo", "publicado"],
+                        "fuente": "database_fallback"
+                    },
+                    "score": 0.7,  # Score fijo para búsquedas en BD
+                    "priority": getattr(unidad, 'prioridad', 5),
+                    "reranked": False
+                })
+            
+            if results:
+                print(f"✅ Encontrados {len(results)} documentos en BD")
+            else:
+                print(f"❌ No se encontraron documentos en BD para '{query}'")
+            
+            return results
+            
+        except Exception as e:
+            print(f"❌ Error en búsqueda de BD: {e}")
+            traceback.print_exc()
+            return []
