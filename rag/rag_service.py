@@ -24,12 +24,13 @@ class RAGService:
     def __init__(self, db: Session, use_cache: bool = True):
         self.db = db
         self.chroma = ChromaDBConfig()
+        self._rag_available = True  # 🔥 Bandera para saber si RAG está disponible
 
         # 🔥 Ruta fija a los modelos locales (los que descargaste con download_hf_models.py)
-        BASE_DIR = Path(__file__).resolve().parent.parent   # .../Backend_Agente_Inteligente/app
+        BASE_DIR = Path(__file__).resolve().parent.parent   # .../Backend_Agente_Inteligente
         HF_MODELS_DIR = BASE_DIR / "hf_models"
-        self._EMBEDDER_DIR = "all-MiniLM-L6-v2"
-        self._RERANKER_DIR = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        EMBEDDER_PATH = HF_MODELS_DIR / "all-MiniLM-L6-v2"
+        RERANKER_PATH = HF_MODELS_DIR / "ms-marco-MiniLM-L-6-v2"
 
         # 🔥 Cargar modelos SOLO una vez
         if not RAGService._models_loaded:
@@ -38,37 +39,35 @@ class RAGService:
 
             # ====== EMBEDDER DESDE CARPETA LOCAL ======
             try:
-                print(f"📦 Cargando embedder desde ruta local: {self._EMBEDDER_DIR}")
+                print(f"📦 Cargando embedder desde ruta local: {EMBEDDER_PATH}")
                 RAGService._embedder = SentenceTransformer(
-                    str(self._EMBEDDER_DIR),
-                    device=device
+                    str(EMBEDDER_PATH),
+                    device=device,
+                    cache_folder=str(HF_MODELS_DIR)
                 )
                 print("✅ Embedder cargado desde disco.")
             except Exception as e:
-                raise RuntimeError(
-                    f"❌ No se pudo cargar el modelo de embeddings "
-                    f"desde {self._EMBEDDER_DIR}.\n"
-                    f"Asegúrate de haber ejecutado scripts/download_hf_models.py "
-                    f"con internet al menos una vez.\n"
-                    f"Detalle técnico: {e}"
-                )
+                print(f"⚠️  No se pudo cargar el modelo de embeddings desde {EMBEDDER_PATH}")
+                print(f"   La funcionalidad RAG estará deshabilitada.")
+                print(f"   Detalle: {e}")
+                RAGService._embedder = None
+                self._rag_available = False
 
             # ====== RERANKER DESDE CARPETA LOCAL ======
             try:
-                print(f"📦 Cargando reranker desde ruta local: {self._RERANKER_DIR}")
+                print(f"📦 Cargando reranker desde ruta local: {RERANKER_PATH}")
                 RAGService._reranker = CrossEncoder(
-                    str(self._RERANKER_DIR),
-                    device=device
+                    str(RERANKER_PATH),
+                    device=device,
+                    cache_folder=str(HF_MODELS_DIR)
                 )
                 print("✅ Reranker cargado desde disco.")
             except Exception as e:
-                raise RuntimeError(
-                    f"❌ No se pudo cargar el modelo de re-ranking "
-                    f"desde {self._RERANKER_DIR}.\n"
-                    f"Asegúrate de haber ejecutado scripts/download_hf_models.py "
-                    f"con internet al menos una vez.\n"
-                    f"Detalle técnico: {e}"
-                )
+                print(f"⚠️  No se pudo cargar el modelo de re-ranking desde {RERANKER_PATH}")
+                print(f"   La funcionalidad RAG estará deshabilitada.")
+                print(f"   Detalle: {e}")
+                RAGService._reranker = None
+                self._rag_available = False
 
             RAGService._models_loaded = True
 
@@ -130,6 +129,10 @@ class RAGService:
         """
         Obtiene embedding del cache en memoria o lo genera
         """
+        # 🔥 Si RAG no está disponible, retornar un vector dummy
+        if not self.embedder:
+            return [0.0] * 384  # Vector dummy de 384 dimensiones (tamaño del modelo)
+            
         # Agregar session al hash SOLO si existe
         cache_key = f"{session_id}:{text}" if session_id else text
         text_hash = hashlib.md5(cache_key.encode()).hexdigest()
@@ -159,6 +162,11 @@ class RAGService:
         """
         Busca documentos relevantes con caché Redis y boost de prioridad
         """
+        # 🔥 Si RAG no está disponible, retornar lista vacía
+        if not self.embedder:
+            print(f"⚠️  RAG no disponible, retornando resultados vacíos para búsqueda")
+            return []
+            
         cache_key = self._get_cache_key(id_agente, query, n_results, use_reranking)
         cached_results = self._get_from_cache(cache_key)
         
@@ -206,7 +214,7 @@ class RAGService:
         if not docs:
             return []
         
-        if use_reranking and len(docs) > 0:
+        if use_reranking and len(docs) > 0 and self.reranker:
             print(f"🔄 Re-rankeando {len(docs)} documentos...")
             
             pairs = [[query, doc] for doc in docs]
@@ -379,6 +387,11 @@ class RAGService:
 
     def ingest_unidad(self, unidad: UnidadContenido, categoria: Categoria):
         """Indexa UNA unidad de contenido"""
+        # 🔥 Si RAG no está disponible, simplemente retornar sin error
+        if not self.embedder:
+            print(f"⚠️  RAG no disponible, skipping indexing para unidad {unidad.id_contenido}")
+            return {"ok": True, "id": f"unidad_{unidad.id_contenido}", "skipped": True}
+            
         id_agente = categoria.id_agente
         collection = self.create_collection_if_missing(id_agente)
 

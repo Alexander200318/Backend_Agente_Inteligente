@@ -190,6 +190,7 @@ class UnidadContenidoService:
         return {
             "ok": True,
             "id_contenido": id_contenido,
+            "id_agente": id_agente,  # 🔥 AGREGAR id_agente para que el router pueda usarlo
             "tipo_eliminacion": "fisica" if hard_delete else "logica",
             "deleted_from_chromadb": rag_deleted,
             "deleted_from_database": db_result

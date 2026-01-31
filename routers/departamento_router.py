@@ -66,7 +66,10 @@ def listar_departamentos(
     🔒 Requiere autenticación
     """
     service = DepartamentoService(db)
-    return service.listar_departamentos(skip, limit, activo, facultad)@router.get(
+    return service.listar_departamentos(skip, limit, activo, facultad)
+
+
+@router.get(
     "/estadisticas",
     response_model=dict,
     summary="Estadísticas generales",

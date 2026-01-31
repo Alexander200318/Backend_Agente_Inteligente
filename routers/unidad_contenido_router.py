@@ -25,6 +25,7 @@ def crear_contenido(
     return UnidadContenidoService(db).crear_contenido(data, creado_por=current_user.id_usuario)
 
 @router.get("/agente/{id_agente}", response_model=List[UnidadContenidoResponse])
+@router.get("/agente/{id_agente}/", response_model=List[UnidadContenidoResponse])  # 🔥 CON barra final también
 def listar_contenidos(
     id_agente: int, 
     estado: Optional[str] = None, 
@@ -40,6 +41,7 @@ def listar_contenidos(
     )
 
 @router.get("/{id_contenido}", response_model=UnidadContenidoResponse)
+@router.get("/{id_contenido}/", response_model=UnidadContenidoResponse)  # 🔥 CON barra final también
 def obtener_contenido(
     id_contenido: int,
     include_deleted: bool = Query(False, description="Incluir si está eliminado"),
@@ -54,6 +56,7 @@ def obtener_contenido(
         raise HTTPException(status_code=404, detail=str(e))
 
 @router.put("/{id_contenido}", response_model=UnidadContenidoResponse)
+@router.put("/{id_contenido}/", response_model=UnidadContenidoResponse)  # 🔥 CON barra final también
 def actualizar_contenido(
     id_contenido: int,
     data: UnidadContenidoUpdate,
@@ -74,6 +77,7 @@ def actualizar_contenido(
 
 
 @router.post("/{id_contenido}/publicar", response_model=UnidadContenidoResponse)
+@router.post("/{id_contenido}/publicar/", response_model=UnidadContenidoResponse)  # 🔥 CON barra final también
 def publicar_contenido(
     id_contenido: int,
     db: Session = Depends(get_db),
@@ -92,6 +96,7 @@ def publicar_contenido(
 
 
 @router.delete("/{id_contenido}")
+@router.delete("/{id_contenido}/")  # 🔥 CON barra final también
 def eliminar_contenido(
     id_contenido: int,
     hard_delete: bool = Query(False, description="Si True, elimina físicamente. Si False, soft delete"),
@@ -124,6 +129,7 @@ def eliminar_contenido(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{id_contenido}/restore", response_model=UnidadContenidoResponse)
+@router.post("/{id_contenido}/restore/", response_model=UnidadContenidoResponse)  # 🔥 CON barra final también
 def restaurar_contenido(
     id_contenido: int,
     db: Session = Depends(get_db),

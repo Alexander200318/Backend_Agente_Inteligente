@@ -124,7 +124,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     debug=settings.DEBUG,
-    redirect_slashes=False,  # 🔥 CRÍTICO: No redirigir /ruta a /ruta/ - FIX 307 REDIRECT BUG
+    redirect_slashes=False,  # 🔥 NO redirigir - manejar ambas versiones directamente sin perder headers
 )
 
 # 🔥 Agregar rate limiter a la app
