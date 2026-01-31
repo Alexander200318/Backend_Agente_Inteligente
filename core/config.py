@@ -116,10 +116,7 @@ class Settings(BaseSettings):
         else:
             # 🟢 Desarrollo: Todos los anteriores (más permisivo)
             return web_origins + mobile_origins
-<<<<<<< Updated upstream
 
-=======
->>>>>>> Stashed changes
     # ============================================
     #   GROQ (API IA REMOTA) - MODELO PRINCIPAL
     # ============================================
