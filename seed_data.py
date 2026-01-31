@@ -32,12 +32,18 @@ def seed_completo():
             {"nombre": "Recursos Humanos", "codigo": "RRHH", "email": "rrhh@inst.edu.ec"}
         ]
         for d in departamentos_data:
-            depto = Departamento(**d, activo=True)
-            db.add(depto)
-            db.commit()
-            db.refresh(depto)
-            deptos.append(depto)
-            print(f"  ✅ {depto.nombre}")
+            # Verificar si ya existe
+            depto_existe = db.query(Departamento).filter(Departamento.nombre == d["nombre"]).first()
+            if depto_existe:
+                print(f"  ⏭️  {d['nombre']} (ya existe)")
+                deptos.append(depto_existe)
+            else:
+                depto = Departamento(**d, activo=True)
+                db.add(depto)
+                db.commit()
+                db.refresh(depto)
+                deptos.append(depto)
+                print(f"  ✅ {depto.nombre}")
         
         # 2. USUARIOS Y PERSONAS
         print("\n👥 [2/10] Creando Usuarios...")
@@ -69,12 +75,18 @@ def seed_completo():
         ]
         
         for u_data in usuarios_data:
-            persona_schema = PersonaCreate(**u_data["persona"])
-            usuario_schema = UsuarioCreate(username=u_data["username"], email=u_data["email"],
-                                          password=u_data["password"], persona=persona_schema)
-            u = service.crear_usuario(usuario_schema)
-            usuarios.append(u)
-            print(f"  ✅ {u.username}")
+            # Verificar si ya existe
+            usuario_existe = db.query(Usuario).filter(Usuario.username == u_data["username"]).first()
+            if usuario_existe:
+                print(f"  ⏭️  {u_data['username']} (ya existe)")
+                usuarios.append(usuario_existe)
+            else:
+                persona_schema = PersonaCreate(**u_data["persona"])
+                usuario_schema = UsuarioCreate(username=u_data["username"], email=u_data["email"],
+                                              password=u_data["password"], persona=persona_schema)
+                u = service.crear_usuario(usuario_schema)
+                usuarios.append(u)
+                print(f"  ✅ {u.username}")
         
         # 3. ROLES
         print("\n🔐 [3/10] Creando Roles...")
@@ -89,12 +101,18 @@ def seed_completo():
              "creado_por": usuarios[0].id_usuario},
         ]
         for r in roles_data:
-            rol = Rol(**r)
-            db.add(rol)
-            db.commit()
-            db.refresh(rol)
-            roles.append(rol)
-            print(f"  ✅ {rol.nombre_rol}")
+            # Verificar si ya existe
+            rol_existe = db.query(Rol).filter(Rol.nombre_rol == r["nombre_rol"]).first()
+            if rol_existe:
+                print(f"  ⏭️  {r['nombre_rol']} (ya existe)")
+                roles.append(rol_existe)
+            else:
+                rol = Rol(**r)
+                db.add(rol)
+                db.commit()
+                db.refresh(rol)
+                roles.append(rol)
+                print(f"  ✅ {rol.nombre_rol}")
         
         # 4. ASIGNAR ROLES A USUARIOS
         print("\n🎭 [4/10] Asignando Roles...")
