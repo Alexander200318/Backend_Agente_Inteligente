@@ -129,8 +129,9 @@ class AgentClassifier:
         
         # Si no hay coincidencia keyword, usar embeddings
         if self.embedder is None:
-            print("⚠️  Embedder no disponible para clasificación")
-            return None
+            print("⚠️  Embedder no disponible para clasificación, usando fallback a búsqueda en BD")
+            # Devolver agente 1 por defecto (Agente TIC)
+            return [1] if top_k > 1 else 1
             
         try:
             if self.collection.count() == 0:
