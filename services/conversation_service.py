@@ -731,6 +731,7 @@ class ConversationService:
         calificacion_min: Optional[int] = None,
         calificacion_max: Optional[int] = None,
         incluir_visitante: bool = True,
+        solo_visitante: bool = False,
         columnas_excluidas: List[str] = None
     ) -> BytesIO:
         """
@@ -923,6 +924,17 @@ class ConversationService:
                 df = df.drop(columns=[c for c in columnas_a_eliminar if c in df.columns])
                 logger.info(f"Columnas excluidas del Excel: {columnas_a_eliminar}")
 
+            # 🔥 NUEVO: Si solo_visitante es True, mantener solo Nombre, Apellido, Email, Ocupación
+            if solo_visitante:
+                logger.info(f"🔍 DEBUG - Parámetro solo_visitante = {solo_visitante}")
+                logger.info(f"🔍 DEBUG - Columnas disponibles en DataFrame: {list(df.columns)}")
+                columnas_visitante = ['Visitante Nombre', 'Visitante Apellido', 'Visitante Email', 'Visitante Ocupación']
+                columnas_existentes = [col for col in columnas_visitante if col in df.columns]
+                logger.info(f"🔍 DEBUG - Columnas a mantener: {columnas_visitante}")
+                logger.info(f"🔍 DEBUG - Columnas encontradas: {columnas_existentes}")
+                df = df[columnas_existentes]
+                logger.info(f"✅ Solo datos del visitante - columnas finales: {list(df.columns)}")
+
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df.to_excel(writer, sheet_name='Conversaciones', index=False)
@@ -1066,6 +1078,7 @@ class ConversationService:
         calificacion_min: Optional[int] = None,
         calificacion_max: Optional[int] = None,
         incluir_visitante: bool = True,
+        solo_visitante: bool = False,
         columnas_excluidas: List[str] = None,
         usuario_nombre: str = "Usuario"
     ) -> BytesIO:
@@ -1092,6 +1105,7 @@ class ConversationService:
                 calificacion_min=calificacion_min,
                 calificacion_max=calificacion_max,
                 incluir_visitante=incluir_visitante,
+                solo_visitante=solo_visitante,
                 columnas_excluidas=columnas_excluidas
             )
             
@@ -1128,6 +1142,20 @@ class ConversationService:
             info_run.font.size = Pt(9)
             info_run.font.italic = True
             info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # 🔥 VALIDACIÓN: Si no hay datos ni columnas, retornar documento vacío
+            if len(df) == 0 or len(df.columns) == 0:
+                empty_note = doc.add_paragraph()
+                empty_note.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                empty_run = empty_note.add_run('⚠️ No hay conversaciones que coincidan con los filtros seleccionados.')
+                empty_run.font.size = Pt(12)
+                empty_run.font.italic = True
+                
+                output = BytesIO()
+                doc.save(output)
+                output.seek(0)
+                logger.info(f"✅ Documento Word generado (vacío)")
+                return output
             
             # ===== TABLA DE DATOS (Simplificada y Funcional) =====
             table = doc.add_table(rows=1, cols=len(df.columns))

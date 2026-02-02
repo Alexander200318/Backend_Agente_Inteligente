@@ -376,8 +376,6 @@ async def export_conversations_to_excel(
     **Columnas excluidas por defecto:** Calificación, Satisfacción, País, Ciudad, Mensajes
     """
     try:
-        print(f"🔍 PARÁMETROS RECIBIDOS: solo_visitante={solo_visitante} (type={type(solo_visitante).__name__}), incluir_visitante={incluir_visitante}")
-        logger.info(f"🔍 PARÁMETROS RECIBIDOS: solo_visitante={solo_visitante} (type={type(solo_visitante).__name__}), incluir_visitante={incluir_visitante}")
         estado_str = estado.value if estado else None
         
         excel_file = await ConversationService.export_to_excel(
