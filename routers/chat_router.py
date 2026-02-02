@@ -38,6 +38,71 @@ class ChatRequest(BaseModel):
     temperatura: Optional[float] = None
     max_tokens: Optional[int] = None
 
+# 🔥 DETECTOR DE DESPEDIDA
+def _detectar_despedida(mensaje: str) -> bool:
+    """Detecta si el usuario está diciendo adiós/despidiéndose"""
+    mensaje_lower = mensaje.lower()
+    
+    palabras_despedida = [
+        'adiós',
+        'adios',
+        'chao',
+        'ciao',
+        'bye',
+        'nos vemos',
+        'hasta luego',
+        'hasta la vista',
+        'cuídate',
+        'cuidate',
+        'me voy',
+        'tengo que irme',
+        'tengo que irme',
+        'hasta pronto',
+        'fin',
+        'que tenga un buen día',
+        'que tenga buen día',
+        'gracias adiós',
+        'gracias chao',
+        'ok adiós',
+        'ok chao',
+    ]
+    
+    for palabra in palabras_despedida:
+        if palabra in mensaje_lower:
+            logger.info(f"👋 Despedida detectada: '{palabra}'")
+            return True
+    
+    return False
+
+# 🔥 DETECTOR DE AGRADECIMIENTO
+def _detectar_agradecimiento(mensaje: str) -> bool:
+    """Detecta si el usuario está dando las gracias"""
+    mensaje_lower = mensaje.lower()
+    
+    palabras_agradecimiento = [
+        'gracias',
+        'muchas gracias',
+        'muchísimas gracias',
+        'agradezco',
+        'te agradezco',
+        'le agradezco',
+        'gracias de verdad',
+        'gracias de corazón',
+        'muy amable',
+        'excelente, gracias',
+        'perfect, gracias',
+        'ok, gracias',
+        'bueno, gracias',
+        'gracias por',
+    ]
+    
+    for palabra in palabras_agradecimiento:
+        if palabra in mensaje_lower:
+            logger.info(f"🙏 Agradecimiento detectado: '{palabra}'")
+            return True
+    
+    return False
+
 @router.post("/agent")
 def chat_with_agent(
     request: Request,
@@ -496,9 +561,106 @@ Por favor responde claramente:
                     return
 
             # ============================================
-            # 🔥 PASO 2: SI NO HAY CONFIRMACIÓN PENDIENTE, DETECTAR ESCALAMIENTO
+            # 🔥 PASO 1: DETECTAR AGRADECIMIENTO DEL USUARIO
             # ============================================
-            logger.info(f"🔍 No hay confirmación pendiente, verificando si es solicitud de escalamiento...")
+            logger.info(f"🔍 Verificando si es mensaje de agradecimiento...")
+            
+            es_agradecimiento = _detectar_agradecimiento(payload.message)
+            
+            if es_agradecimiento:
+                logger.info(f"🙏 Intención de agradecimiento detectada: '{payload.message[:50]}...'")
+                
+                # Obtener agente actual
+                agente = db.query(AgenteVirtual).filter(
+                    AgenteVirtual.id_agente == payload.agent_id
+                ).first()
+                
+                if agente:
+                    # 🔥 CONSTRUIR MENSAJE DE RESPUESTA A AGRADECIMIENTO
+                    # Incluir nombre del agente y departamento
+                    nombre_agente = agente.nombre_agente or "Agente Virtual"
+                    area = agente.area_especialidad or "este departamento"
+                    
+                    # Crear opciones de lo que puede hacer
+                    opciones = []
+                    if agente.descripcion:
+                        opciones.append(f"- {agente.descripcion}")
+                    
+                    opciones_texto = "\n".join(opciones) if opciones else (
+                        "- Responder tus preguntas sobre el departamento\n"
+                        "- Ayudarte con trámites y procedimientos\n"
+                        "- Brindarte información especializada"
+                    )
+                    
+                    mensaje_agradecimiento = (
+                        f"¡De nada! 😊\n\n"
+                        f"Soy **{nombre_agente}**, tu asistente en {area}.\n"
+                        f"Estoy aquí para ayudarte con lo que necesites.\n\n"
+                        f"**Puedo ayudarte con:**\n{opciones_texto}\n\n"
+                        f"¿Hay algo más en lo que pueda asistirte?"
+                    )
+                    
+                    # Enviar evento de respuesta
+                    yield f"data: {safe_json_dumps({'type': 'start'})}\n\n"
+                    
+                    # Enviar mensaje carácter por carácter
+                    for char in mensaje_agradecimiento:
+                        yield f"data: {safe_json_dumps({'type': 'chunk', 'content': char})}\n\n"
+                    
+                    yield f"data: {safe_json_dumps({'type': 'done', 'content': mensaje_agradecimiento})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    
+                    # Guardar en BD si es necesario
+                    if visitante_registrado and conversation:
+                        try:
+                            msg_agradecimiento = MessageCreate(role=MessageRole.assistant, content=mensaje_agradecimiento)
+                            await ConversationService.add_message(payload.session_id, msg_agradecimiento)
+                        except Exception as e:
+                            logger.error(f"⚠️ Error guardando mensaje de agradecimiento: {e}")
+                    
+                    return
+            
+            # 🔥 PASO 2: DETECTAR DESPEDIDA DEL USUARIO
+            # ============================================
+            logger.info(f"🔍 Verificando si es mensaje de despedida...")
+            
+            es_despedida = _detectar_despedida(payload.message)
+            
+            if es_despedida:
+                logger.info(f"👋 Intención de despedida detectada: '{payload.message[:50]}...'")
+                
+                # Obtener agente actual
+                agente = db.query(AgenteVirtual).filter(
+                    AgenteVirtual.id_agente == payload.agent_id
+                ).first()
+                
+                if agente:
+                    # 🔥 CONSTRUIR MENSAJE DE DESPEDIDA CON DATOS DEL AGENTE
+                    mensaje_despedida = agente.mensaje_despedida or "¡Hasta luego! Fue un placer ayudarte. 👋"
+                    
+                    # Enviar evento de despedida
+                    yield f"data: {safe_json_dumps({'type': 'start'})}\n\n"
+                    
+                    # Enviar mensaje carácter por carácter
+                    for char in mensaje_despedida:
+                        yield f"data: {safe_json_dumps({'type': 'chunk', 'content': char})}\n\n"
+                    
+                    yield f"data: {safe_json_dumps({'type': 'done', 'content': mensaje_despedida})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    
+                    # Guardar en BD si es necesario
+                    if visitante_registrado and conversation:
+                        try:
+                            msg_despedida = MessageCreate(role=MessageRole.assistant, content=mensaje_despedida)
+                            await ConversationService.add_message(payload.session_id, msg_despedida)
+                        except Exception as e:
+                            logger.error(f"⚠️ Error guardando mensaje de despedida: {e}")
+                    
+                    return
+            
+            # 🔥 PASO 3: SI NO ES AGRADECIMIENTO NI DESPEDIDA NI CONFIRMACIÓN PENDIENTE, DETECTAR ESCALAMIENTO
+            # ============================================
+            logger.info(f"🔍 No es agradecimiento ni despedida, verificando si es solicitud de escalamiento...")
             
             quiere_humano = escalamiento_service.detectar_intencion_escalamiento(payload.message)
             
@@ -506,6 +668,9 @@ Por favor responde claramente:
             
             if quiere_humano:
                 logger.info(f"🔔 Intención de escalamiento detectada: '{payload.message[:50]}...'")
+                
+                # 🔥 NO requerir email para escalar, solo para otras funcionalidades
+                # El usuario puede escalar sin estar registrado
                 
                 # Marcar como pendiente
                 escalamiento_service.marcar_confirmacion_pendiente(payload.session_id)

@@ -1,6 +1,6 @@
 # routers/conversation_router.py
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query, Body, status
+from fastapi import APIRouter, HTTPException, Query, Body, status, Depends
 from datetime import datetime, timedelta
 import logging
 
@@ -14,7 +14,9 @@ from models.conversation_mongo import (
     ConversationStatus,
     MessageRole
 )
+from models.usuario import Usuario
 from services.conversation_service import ConversationService
+from auth.dependencies import get_current_user
 
 from fastapi.responses import StreamingResponse
 from io import BytesIO
@@ -149,6 +151,110 @@ async def delete_conversation(session_id: str):
         )
 
 
+# 🔥 NUEVO ENDPOINT: Guardar mensaje desde widget (sin WebSocket)
+@router.post(
+    "/save-message",
+    summary="Guardar mensaje del widget"
+)
+async def save_widget_message(
+    session_id: str = Query(..., description="ID de la sesión"),
+    content: str = Query(..., description="Contenido del mensaje"),
+    role: str = Query(default="user", description="user o assistant"),
+    id_visitante: Optional[int] = Query(None, description="ID del visitante autenticado"),
+    agent_name: str = Query(default="Agente Virtual", description="Nombre del agente"),
+    id_agente: int = Query(default=1, description="ID del agente"),
+    contenidos_json: Optional[str] = Query(None, description="JSON con contenidos consultados [{'id': 1, 'titulo': 'test', ...}]")
+):
+    """
+    🔥 Guardar mensaje desde el widget (REST, sin WebSocket)
+    
+    Se llama en cada interacción del usuario con el chatbot
+    - Crea la conversación si no existe
+    - Guarda el mensaje CON contenidos consultados
+    - Retorna la conversación actualizada
+    """
+    try:
+        logger.info(f"📝 Guardando mensaje desde widget:")
+        logger.info(f"   - Session: {session_id}")
+        logger.info(f"   - Visitante: {id_visitante}")
+        logger.info(f"   - Rol: {role}")
+        logger.info(f"   - Agente: {agent_name}")
+        
+        # Verificar si la conversación existe
+        existing_conv = await ConversationService.get_conversation_by_session(session_id)
+        
+        if not existing_conv:
+            logger.info(f"⚠️ Conversación no existe, creando nueva...")
+            
+            # Crear conversación
+            conv_create = ConversationCreate(
+                session_id=session_id,
+                id_agente=id_agente,
+                agent_name=agent_name,
+                agent_type="virtual",
+                id_visitante=id_visitante,  # 🔥 INCLUIR VISITANTE
+                origin="widget"
+            )
+            existing_conv = await ConversationService.create_conversation(conv_create)
+            logger.info(f"✅ Conversación creada: {session_id}")
+        
+        # 🔥 PROCESAR CONTENIDOS CONSULTADOS
+        contenidos_consultados = []
+        total_contenidos = 0
+        
+        if contenidos_json:
+            try:
+                import json
+                contenidos_list = json.loads(contenidos_json)
+                
+                # Transformar a ContentReference objects
+                from models.conversation_mongo import ContentReference
+                
+                for item in contenidos_list:
+                    ref = ContentReference(
+                        id_unidad_contenido=item.get('id'),
+                        titulo=item.get('titulo'),
+                        tipo_contenido=item.get('tipo', 'documento'),
+                        chunk_text=item.get('contenido'),
+                        relevancia_score=item.get('score', 0.0),
+                        categoria=item.get('categoria')
+                    )
+                    contenidos_consultados.append(ref)
+                
+                total_contenidos = len(contenidos_consultados)
+                logger.info(f"✅ {total_contenidos} contenidos procesados")
+            except Exception as e:
+                logger.error(f"⚠️ Error procesando contenidos: {e}")
+        
+        # Guardar mensaje
+        message = MessageCreate(
+            role=MessageRole[role] if isinstance(role, str) else role,
+            content=content,
+            contenidos_consultados=contenidos_consultados,  # 🔥 NUEVO
+            total_contenidos_usados=total_contenidos  # 🔥 NUEVO
+        )
+        
+        updated_conv = await ConversationService.add_message(session_id, message)
+        logger.info(f"✅ Mensaje guardado en MongoDB con {total_contenidos} contenidos")
+        
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "total_mensajes": updated_conv.metadata.total_mensajes,
+            "total_contenidos_usados": total_contenidos,
+            "conversation_id": str(updated_conv.id)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error guardando mensaje: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al guardar mensaje: {str(e)}"
+        )
+
+
 # ==================== MENSAJES ====================
 
 @router.post(
@@ -241,25 +347,32 @@ async def get_messages(
     summary="Exportar conversaciones a Excel con filtros"
 )
 async def export_conversations_to_excel(
-    id_agente: Optional[int] = Query(None, description="Filtrar por ID de agente"),
-    estado: Optional[ConversationStatus] = Query(None, description="Filtrar por estado"),
-    origin: Optional[str] = Query(None, description="Filtrar por origen"),
-    escaladas: Optional[bool] = Query(None, description="Solo conversaciones escaladas"),
-    id_visitante: Optional[int] = Query(None, description="Filtrar por ID de visitante"),
-    user_id: Optional[int] = Query(None, description="Filtrar por agente humano"),
-    fecha_inicio: Optional[datetime] = Query(None, description="Fecha inicio"),
-    fecha_fin: Optional[datetime] = Query(None, description="Fecha fin"),
-    calificacion_min: Optional[int] = Query(None, ge=1, le=5, description="Calificación mínima"),
-    calificacion_max: Optional[int] = Query(None, ge=1, le=5, description="Calificación máxima"),
-    incluir_visitante: bool = Query(True, description="Incluir datos del visitante"),
+    id_agente: Optional[int] = Query(None, description="Filtrar por ID de agente (None = todos)"),
+    estado: Optional[ConversationStatus] = Query(None, description="Filtrar por estado (None = todos)"),
+    origin: Optional[str] = Query(None, description="Filtrar por origen (web, mobile, widget, api)"),
+    escaladas: Optional[bool] = Query(None, description="🆘 Solo conversaciones escaladas"),
+    incluir_visitante: bool = Query(True, description="👤 Incluir datos de visitante (IP, dispositivo, navegador, ubicación)"),
+    fecha_inicio: Optional[datetime] = Query(None, description="📅 Fecha inicio (Todo el historial si no se especifica)"),
+    fecha_fin: Optional[datetime] = Query(None, description="📅 Fecha fin (hoy si no se especifica)"),
     columnas_excluidas: List[str] = Query(
     default=["id_agente", "session_id", "id_visitante", "escalado_a_usuario_id", 
-             "comentario_calificacion", "visitante_total_conversaciones"],
+             "comentario_calificacion", "calificacion", "visitante_pais", 
+             "visitante_ciudad", "visitante_satisfaccion", "visitante_total_mensajes"],
     description="Columnas a excluir del reporte"
 )
 ):
     """
-    Exportar conversaciones a Excel con datos enriquecidos del visitante
+    📊 Exportar conversaciones a Excel con filtros personalizados
+    
+    **Filtros disponibles:**
+    - **Período**: Todo el historial (sin fechas) | Rango personalizado
+    - **🤖 Agente Virtual**: Todos los agentes (None) | Agente específico
+    - **📊 Estado**: Todos los estados (None) | activa, finalizada, escalada_humano, abandonada
+    - **📱 Origen**: Todos los orígenes (None) | web, mobile, widget, api
+    - **🆘 Solo escaladas**: Conversaciones que requirieron atención humana
+    - **👤 Incluir datos de visitante**: IP, dispositivo, navegador, ubicación
+    
+    **Columnas excluidas por defecto:** Calificación, Satisfacción, País, Ciudad, Mensajes
     """
     try:
         estado_str = estado.value if estado else None
@@ -269,12 +382,8 @@ async def export_conversations_to_excel(
             estado=estado_str,
             origin=origin,
             escaladas=escaladas,
-            id_visitante=id_visitante,
-            user_id=user_id,
             fecha_inicio=fecha_inicio,
             fecha_fin=fecha_fin,
-            calificacion_min=calificacion_min,
-            calificacion_max=calificacion_max,
             incluir_visitante=incluir_visitante,
             columnas_excluidas=columnas_excluidas
         )
@@ -289,6 +398,67 @@ async def export_conversations_to_excel(
         
     except Exception as e:
         logger.error(f"Error exportando a Excel: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al exportar: {str(e)}"
+        )
+
+
+
+# 🔥 NUEVO ENDPOINT: Exportar a Word
+@router.get(
+    "/export/word",
+    summary="Exportar conversaciones a Word con filtros"
+)
+async def export_conversations_to_word(
+    id_agente: Optional[int] = Query(None, description="Filtrar por ID de agente (None = todos)"),
+    estado: Optional[ConversationStatus] = Query(None, description="Filtrar por estado (None = todos)"),
+    origin: Optional[str] = Query(None, description="Filtrar por origen (web, mobile, widget, api)"),
+    escaladas: Optional[bool] = Query(None, description="🆘 Solo conversaciones escaladas"),
+    incluir_visitante: bool = Query(True, description="👤 Incluir datos de visitante (IP, dispositivo, navegador, ubicación)"),
+    fecha_inicio: Optional[datetime] = Query(None, description="📅 Fecha inicio (Todo el historial si no se especifica)"),
+    fecha_fin: Optional[datetime] = Query(None, description="📅 Fecha fin (hoy si no se especifica)"),
+    columnas_excluidas: List[str] = Query(
+        default=["id_agente", "session_id", "id_visitante", "escalado_a_usuario_id", 
+                 "comentario_calificacion", "calificacion", "visitante_pais", 
+                 "visitante_ciudad", "visitante_satisfaccion", "visitante_total_mensajes"],
+        description="Columnas a excluir del reporte"
+    ),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    📄 Exportar conversaciones a Word con filtros personalizados
+    
+    Los mismos filtros que Excel pero genera un documento Word formateado bonito.
+    """
+    try:
+        estado_str = estado.value if estado else None
+        
+        # Extraer nombre del usuario desde el objeto Usuario
+        usuario_nombre = current_user.username if current_user else 'Usuario Desconocido'
+        
+        word_file = await ConversationService.export_to_word(
+            id_agente=id_agente,
+            estado=estado_str,
+            origin=origin,
+            escaladas=escaladas,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            incluir_visitante=incluir_visitante,
+            columnas_excluidas=columnas_excluidas,
+            usuario_nombre=usuario_nombre
+        )
+        
+        filename = f"conversaciones_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.docx"
+        
+        return StreamingResponse(
+            word_file,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error exportando a Word: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al exportar: {str(e)}"

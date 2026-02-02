@@ -13,7 +13,8 @@ from models.conversation_mongo import (
     MessageCreate,
     Message,
     ConversationStatus,
-    ConversationMetadata
+    ConversationMetadata,
+    ContentReference
 )
 from database.mongodb import get_conversations_collection
 
@@ -30,6 +31,48 @@ class ConversationService:
     """
     Servicio para gestionar conversaciones en MongoDB
     """
+    
+    @staticmethod
+    def transform_rag_docs_to_content_references(rag_docs: List[Dict]) -> List[ContentReference]:
+        """
+        🔥 NUEVO: Transforma documentos del RAG en ContentReference objects
+        
+        Entrada esperada del RAG:
+        [
+            {
+                'document': 'texto del documento',
+                'metadata': {'id': 1, 'titulo': 'test', 'tipo': 'documento', 'categoria': 'cat1'},
+                'score': 0.95
+            }
+        ]
+        
+        Retorna:
+        [ContentReference(...), ...]
+        """
+        content_refs = []
+        
+        if not rag_docs:
+            return content_refs
+        
+        for doc in rag_docs:
+            try:
+                meta = doc.get('metadata', {})
+                
+                ref = ContentReference(
+                    id_unidad_contenido=meta.get('id') or meta.get('id_unidad_contenido'),
+                    titulo=meta.get('titulo') or doc.get('document', '')[:100],
+                    tipo_contenido=meta.get('tipo', 'documento'),
+                    chunk_text=doc.get('document', ''),  # El fragmento completo
+                    relevancia_score=doc.get('score', 0.0),
+                    categoria=meta.get('categoria')
+                )
+                content_refs.append(ref)
+                logger.info(f"✅ ContentReference creado: {ref.titulo} (score: {ref.relevancia_score})")
+            except Exception as e:
+                logger.error(f"❌ Error transformando documento RAG: {e}")
+                continue
+        
+        return content_refs
     
 
     @staticmethod
@@ -735,6 +778,19 @@ class ConversationService:
             visitante_ids = set()
             
             for conv in conversations:
+                # 🔥 Procesar contenidos consultados
+                contenidos_consultados = conv.get('messages', [])
+                contenidos_list = []
+                for msg in contenidos_consultados:
+                    if isinstance(msg, dict):
+                        refs = msg.get('contenidos_consultados', [])
+                        for ref in refs:
+                            if isinstance(ref, dict):
+                                titulo = ref.get('titulo', 'Sin título')
+                                contenidos_list.append(titulo)
+                
+                contenido_str = ', '.join(list(dict.fromkeys(contenidos_list))) if contenidos_list else 'No hay contenido'
+                
                 row = {
                     'Session ID': conv.get('session_id'),
                     'ID Agente': conv.get('id_agente'),
@@ -753,6 +809,7 @@ class ConversationService:
                     'Escalado a Usuario Nombre': conv.get('metadata', {}).get('escalado_a_usuario_nombre'),
                     'Calificación': conv.get('metadata', {}).get('calificacion'),
                     'Comentario Calificación': conv.get('metadata', {}).get('comentario_calificacion'),
+                    'Contenido Consultado': contenido_str,  # 🔥 NUEVO
                     'IP Origen': conv.get('metadata', {}).get('ip_origen'),
                     'User Agent': conv.get('metadata', {}).get('user_agent'),
                     'Dispositivo': conv.get('metadata', {}).get('dispositivo'),
@@ -795,7 +852,7 @@ class ConversationService:
                 finally:
                     db.close()
             
-            # 🔥 ENRIQUECER DATOS CON INFORMACIÓN DEL VISITANTE
+            # 🔥 ENRIQUECER DATOS CON INFORMACIÓN DEL VISITANTE (Solo campos necesarios)
             if incluir_visitante:
                 for row in data:
                     vid = row['ID Visitante']
@@ -806,14 +863,9 @@ class ConversationService:
                         row['Visitante Email'] = v['email']
                         row['Visitante Edad'] = v['edad']
                         row['Visitante Ocupación'] = v['ocupacion']
-                        row['Visitante País'] = v['pais']
-                        row['Visitante Ciudad'] = v['ciudad']
                         row['Visitante Canal Acceso'] = v['canal_acceso']
                         row['Visitante Pertenece Instituto'] = v['pertenece_instituto']
-                        row['Visitante Satisfacción'] = v['satisfaccion_estimada']
                         row['Visitante Primera Visita'] = v['primera_visita']
-                        row['Visitante Total Conversaciones'] = v['total_conversaciones']
-                        row['Visitante Total Mensajes'] = v['total_mensajes']
                         row['Visitante Dispositivo'] = v['dispositivo']
                         row['Visitante Navegador'] = v['navegador']
                         row['Visitante SO'] = v['sistema_operativo']
@@ -827,8 +879,12 @@ class ConversationService:
                 'ID Agente',
                 'ID Visitante',
                 'Escalado a Usuario ID',
-                'Visitante Total Conversaciones',
-                'Comentario Calificación'
+                'Comentario Calificación',
+                'Calificación',  # 🔥 Quitar calificación
+                'Visitante País',  # 🔥 Quitar país
+                'Visitante Ciudad',  # 🔥 Quitar ciudad
+                'Visitante Satisfacción',  # 🔥 Quitar satisfacción
+                'Visitante Total Mensajes'  # 🔥 Quitar total mensajes
             ]
 
             if columnas_excluidas is None:
@@ -995,3 +1051,158 @@ class ConversationService:
         except Exception as e:
             logger.error(f"❌ Error obteniendo estadísticas diarias: {e}")
             raise 
+
+    # 🔥 NUEVA FUNCIÓN: Exportar a Word
+    @staticmethod
+    async def export_to_word(
+        id_agente: Optional[int] = None,
+        estado: Optional[str] = None,
+        origin: Optional[str] = None,
+        escaladas: Optional[bool] = None,
+        id_visitante: Optional[int] = None,
+        user_id: Optional[int] = None,
+        fecha_inicio: Optional[datetime] = None,
+        fecha_fin: Optional[datetime] = None,
+        calificacion_min: Optional[int] = None,
+        calificacion_max: Optional[int] = None,
+        incluir_visitante: bool = True,
+        columnas_excluidas: List[str] = None,
+        usuario_nombre: str = "Usuario"
+    ) -> BytesIO:
+        """
+        Exportar conversaciones a Word formateado bonito
+        """
+        try:
+            from docx import Document
+            from docx.shared import Inches, Pt, RGBColor
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.oxml.ns import qn
+            from docx.oxml import OxmlElement
+            
+            # Primero obtener los datos en Excel (BytesIO)
+            excel_bytes = await ConversationService.export_to_excel(
+                id_agente=id_agente,
+                estado=estado,
+                origin=origin,
+                escaladas=escaladas,
+                id_visitante=id_visitante,
+                user_id=user_id,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                calificacion_min=calificacion_min,
+                calificacion_max=calificacion_max,
+                incluir_visitante=incluir_visitante,
+                columnas_excluidas=columnas_excluidas
+            )
+            
+            # Leer el Excel y convertir a DataFrame
+            excel_bytes.seek(0)
+            df = pd.read_excel(excel_bytes)
+            
+            # Crear documento Word con orientación horizontal
+            doc = Document()
+            
+            # Cambiar a orientación horizontal (landscape)
+            section = doc.sections[0]
+            section.page_height = Inches(8.5)
+            section.page_width = Inches(11)
+            section.top_margin = Inches(0.3)
+            section.bottom_margin = Inches(0.3)
+            section.left_margin = Inches(0.3)
+            section.right_margin = Inches(0.3)
+            
+            # Título compact
+            title = doc.add_heading('📊 Reporte de Conversaciones', 0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            title_format = title.paragraph_format
+            title_format.space_before = Pt(0)
+            title_format.space_after = Pt(2)
+            
+            # Información del reporte (una línea compacta)
+            info_para = doc.add_paragraph()
+            info_para.paragraph_format.space_before = Pt(0)
+            info_para.paragraph_format.space_after = Pt(3)
+            
+            fecha_generacion = datetime.utcnow().strftime('%d/%m/%Y %H:%M:%S')
+            info_run = info_para.add_run(f'Generado por: {usuario_nombre} | Fecha: {fecha_generacion} | Total: {len(df)} conversaciones')
+            info_run.font.size = Pt(9)
+            info_run.font.italic = True
+            info_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # ===== TABLA DE DATOS (Simplificada y Funcional) =====
+            table = doc.add_table(rows=1, cols=len(df.columns))
+            table.style = 'Light Grid Accent 1'
+            
+            # Establecer ancho de tabla
+            table.autofit = False
+            table.allow_autofit = False
+            
+            # Encabezados
+            header_cells = table.rows[0].cells
+            col_width = Inches(10 / len(df.columns))
+            
+            for idx, col in enumerate(df.columns):
+                cell = header_cells[idx]
+                cell.text = str(col)[:30]
+                cell.width = col_width
+                
+                # 🎨 APLICAR FONDO AZUL OSCURO A HEADERS
+                shading_elm = OxmlElement('w:shd')
+                shading_elm.set(qn('w:fill'), '1F4E78')  # Azul oscuro
+                cell._element.get_or_add_tcPr().append(shading_elm)
+                
+                # Estilo de encabezado - MÁS VISIBLE
+                for paragraph in cell.paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in paragraph.runs:
+                        run.font.bold = True
+                        run.font.size = Pt(9)
+                        run.font.color.rgb = RGBColor(255, 255, 255)  # Blanco sobre azul
+                    paragraph.paragraph_format.space_before = Pt(0)
+                    paragraph.paragraph_format.space_after = Pt(0)
+                    paragraph.paragraph_format.line_spacing = Pt(11)
+            
+            # Filas de datos (limitar a 50)
+            max_rows = 50
+            for idx, row in df.head(max_rows).iterrows():
+                row_cells = table.add_row().cells
+                for col_idx, col in enumerate(df.columns):
+                    value = str(row[col]) if row[col] is not None else '—'
+                    value_short = value[:50] if len(value) <= 50 else value[:47] + '...'
+                    cell = row_cells[col_idx]
+                    cell.text = value_short
+                    cell.width = col_width
+                    
+                    # Reducir fuente de datos - pero más compacto
+                    for paragraph in cell.paragraphs:
+                        paragraph.paragraph_format.space_before = Pt(0)
+                        paragraph.paragraph_format.space_after = Pt(0)
+                        paragraph.paragraph_format.line_spacing = Pt(8)
+                        for run in paragraph.runs:
+                            run.font.size = Pt(7)
+            
+            # Si hay más filas, agregar nota al final
+            if len(df) > max_rows:
+                p = doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(6)
+                nota = p.add_run(f'⚠️ Se muestran {max_rows} de {len(df)} conversaciones.')
+                nota.font.size = Pt(8)
+                nota.font.italic = True
+            
+            # Guardar en BytesIO
+            output = BytesIO()
+            doc.save(output)
+            output.seek(0)
+            
+            logger.info(f"✅ Documento Word generado con {len(df)} conversaciones")
+            return output
+            
+        except ImportError:
+            logger.error("❌ python-docx no está instalado. Instalar con: pip install python-docx")
+            raise HTTPException(
+                status_code=500,
+                detail="No se puede generar Word. Contacte al administrador."
+            )
+        except Exception as e:
+            logger.error(f"❌ Error generando Word: {e}")
+            raise

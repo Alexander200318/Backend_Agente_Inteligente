@@ -76,6 +76,38 @@ async def chat_with_groq(
     try:
         logger.info(f"📨 Chat request recibida - Agente: {request.id_agente}, Sesión: {request.session_id}")
         
+        # 🔥 DETECTAR ESCALAMIENTO
+        from services.escalamiento_service import EscalamientoService
+        escalamiento_service = EscalamientoService(db)
+        
+        quiere_humano = escalamiento_service.detectar_intencion_escalamiento(request.mensaje)
+        
+        if quiere_humano:
+            logger.info(f"🚀 Escalamiento detectado en POST /chat: '{request.mensaje}'")
+            
+            try:
+                resultado = escalamiento_service.escalar_conversacion(
+                    session_id=request.session_id,
+                    motivo=f"Usuario solicita: {request.mensaje[:100]}"
+                )
+                
+                if resultado.get('ok', False):
+                    logger.info(f"✅ Escalamiento realizado para {request.session_id}")
+                    
+                    return ChatResponse(
+                        id_conversacion=None,
+                        respuesta="✅ Tu conversación ha sido escalada a un agente humano. Espera por favor...",
+                        modelo_usado="escalamiento",
+                        tokens_usados=0,
+                        documentos_recuperados=0,
+                        fuente="escalamiento"
+                    )
+                
+            except Exception as e:
+                logger.error(f"❌ Error en escalamiento: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
         service = GroqAgentService(db)
         
         result = await service.chat_with_agent(

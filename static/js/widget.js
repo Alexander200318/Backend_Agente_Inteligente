@@ -6,6 +6,8 @@ let isEscalated = false;
 let humanAgentName = null;
 let escalamientoTimeout = null; // 🔥 NUEVO: Timeout para cerrar socket
 const ESCALAMIENTO_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos
+let lastConsultedSources = []; // 🔥 NUEVO: Almacenar contenidos consultados
+let currentAgenteData = null; // 🔥 NUEVO: Guardar datos completo del agente actual
 
 // 🔥 SISTEMA DE REGISTRO - SOLO EMAIL
 let messageCount = 0;
@@ -327,7 +329,30 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('✅ Usuario confirmó escalamiento');
             if (confirmacionModal) confirmacionModal.classList.remove('active');
             addBotMessage('Perfecto, te conectaré con un agente humano. Por favor espera...');
-            enviarMensajeProcesado('Sí, quiero hablar con un agente');
+            
+            // 🔥 ENVIAMOS MENSAJE ESPECIAL AL BACKEND INDICANDO CONFIRMACIÓN
+            // En lugar de enviar "Sí, quiero hablar con un agente" que causaría re-detección
+            try {
+                const response = await fetch(`${API_BASE_URL}/escalamiento/confirmar`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: SESSION_ID
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✅ Escalamiento confirmado:', data);
+                    addBotMessage('Tu conversación ha sido transferida a un agente. Espera por favor...');
+                } else {
+                    console.error('Error confirmando escalamiento');
+                    addBotMessage('Hubo un error al procesar tu solicitud. Por favor intenta de nuevo.');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addBotMessage('Hubo un error de conexión. Por favor intenta de nuevo.');
+            }
         });
     }
 
@@ -406,12 +431,20 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
         const emailVerified = sessionStorage.getItem('email_verified');
         const visitorId = sessionStorage.getItem('visitor_id');
+        const visitorEmail = sessionStorage.getItem('visitor_email');
 
         if (emailVerified === 'true' && visitorId) {
             isEmailVerified = true;
             registeredVisitorId = parseInt(visitorId);
+            
+            // 🔥 GUARDAR EMAIL EN LOCALSTORAGE
+            if (visitorEmail) {
+                localStorage.setItem('tecai_visitor_email', visitorEmail);
+            }
+            
             console.log('✅ Email ya verificado en esta sesión');
             console.log('   Visitor ID:', registeredVisitorId);
+            console.log('   Visitor Email:', visitorEmail);
         }
     } catch (e) {
         console.warn('No se pudo recuperar estado de email');
@@ -926,12 +959,13 @@ function toggleAgentSelector() {
     toggleAgentsBtn.classList.toggle('active');
 }
 
-function seleccionarAgente(card, agentId, agentName) {
+function seleccionarAgente(card, agentId, agentName, agenteData = null) {
     document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'));
     card.classList.add('selected');
 
     selectedAgentId = agentId || null;
     selectedAgentName = agentName;
+    currentAgenteData = agenteData; // 🔥 GUARDAR DATOS DEL AGENTE
 
     if (agentId) {
         mostrarInfoAgente();
@@ -1031,7 +1065,7 @@ async function cargarAgentes() {
             `;
 
             card.addEventListener('click', () => {
-                seleccionarAgente(card, agente.id_agente, agente.nombre_agente);
+                seleccionarAgente(card, agente.id_agente, agente.nombre_agente, agente);
             });
 
             agentCards.appendChild(card);
@@ -1104,6 +1138,29 @@ async function sendMessage() {
     sendButton.disabled = true;
     typingIndicator.classList.add('active');
 
+    // 🔥 GUARDAR MENSAJE EN MONGODB INMEDIATAMENTE
+    try {
+        const saveUrl = new URL(`${API_BASE_URL}/conversations/save-message`);
+        saveUrl.searchParams.append('session_id', SESSION_ID);
+        saveUrl.searchParams.append('content', mensaje);
+        saveUrl.searchParams.append('role', 'user');
+        saveUrl.searchParams.append('id_visitante', registeredVisitorId || '');
+        
+        const saveResponse = await fetch(saveUrl.toString(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (saveResponse.ok) {
+            const saveData = await saveResponse.json();
+            console.log('✅ Mensaje guardado en MongoDB:', saveData);
+        } else {
+            console.warn('⚠️ No se pudo guardar el mensaje en MongoDB');
+        }
+    } catch (saveError) {
+        console.warn('⚠️ Error guardando en MongoDB:', saveError);
+    }
+
     const MAX_RETRIES = 2;
     const TIMEOUT_MS = 60000;
 
@@ -1134,13 +1191,20 @@ async function sendMessage() {
                 endpoint = `${API_BASE_URL}/chat/agent/stream`;
                 body = {
                     ...baseBody,
-                    agent_id: Number(selectedAgentId)
+                    agent_id: Number(selectedAgentId),
+                    // 🔥 NUEVO: Agregar temperatura y max_tokens del agente
+                    temperatura: currentAgenteData?.temperatura ? parseFloat(currentAgenteData.temperatura) : 0.7,
+                    max_tokens: currentAgenteData?.max_tokens ? parseInt(currentAgenteData.max_tokens) : 4000
                 };
+                console.log(`🎯 Agente seleccionado: temperatura=${body.temperatura}, max_tokens=${body.max_tokens}`);
             } else {
                 endpoint = `${API_BASE_URL}/chat/auto/stream`;
                 body = {
                     ...baseBody,
-                    departamento_codigo: ""
+                    departamento_codigo: "",
+                    // 🔥 NUEVO: Valores por defecto para modo automático
+                    temperatura: 0.7,
+                    max_tokens: 4000
                 };
             }
 
@@ -1327,6 +1391,18 @@ async function processStream(response) {
                             }
                             break;
 
+                        case 'email_requerido':
+                            console.log('📧 Email requerido para escalamiento:', event.mensaje);
+                            typingIndicator.classList.remove('active');
+                            
+                            // Mostrar mensaje informativo
+                            addBotMessage(event.mensaje);
+                            
+                            // Mostrar modal de email
+                            showEmailRequiredModal();
+                            console.log('✅ Modal de email mostrado');
+                            break;
+
                         case 'token':
                         case 'chunk':
                             if (!currentBotMessageDiv) {
@@ -1352,6 +1428,13 @@ async function processStream(response) {
                             scrollToBottom();
                             break;
 
+                        case 'sources':
+                            // 🔥 NUEVO: Capturar contenidos consultados
+                            console.log('📚 Contenidos consultados:', event.sources);
+                            lastConsultedSources = event.sources || [];
+                            console.log(`✅ ${lastConsultedSources.length} fuentes capturadas`);
+                            break;
+
                         case 'done':
                             clearInterval(heartbeatCheck);
                             console.log('✅ Generación completada');
@@ -1366,6 +1449,38 @@ async function processStream(response) {
 
                             typingIndicator.classList.remove('active');
                             speakText(fullResponse);
+                            
+                            // 🔥 GUARDAR RESPUESTA EN MONGODB CON CONTENIDOS
+                            try {
+                                const saveUrl = new URL(`${API_BASE_URL}/conversations/save-message`);
+                                saveUrl.searchParams.append('session_id', SESSION_ID);
+                                saveUrl.searchParams.append('content', fullResponse);
+                                saveUrl.searchParams.append('role', 'assistant');
+                                saveUrl.searchParams.append('id_visitante', registeredVisitorId || '');
+                                
+                                // 🔥 NUEVO: Agregar contenidos consultados
+                                if (lastConsultedSources && lastConsultedSources.length > 0) {
+                                    saveUrl.searchParams.append('contenidos_json', JSON.stringify(lastConsultedSources));
+                                    console.log(`📚 Enviando ${lastConsultedSources.length} contenidos consultados`);
+                                }
+                                
+                                const saveResponse = await fetch(saveUrl.toString(), {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' }
+                                });
+                                
+                                if (saveResponse.ok) {
+                                    const saveData = await saveResponse.json();
+                                    console.log('✅ Respuesta guardada en MongoDB con', saveData.total_contenidos_usados || 0, 'contenidos');
+                                } else {
+                                    console.warn('⚠️ No se pudo guardar la respuesta en MongoDB');
+                                }
+                            } catch (saveError) {
+                                console.warn('⚠️ Error guardando respuesta en MongoDB:', saveError);
+                            }
+                            
+                            // 🔥 LIMPIAR CONTENIDOS PARA EL PRÓXIMO MENSAJE
+                            lastConsultedSources = [];
                             break;
 
                         case 'escalamiento':
@@ -1459,9 +1574,12 @@ function connectWebSocket(sessionId) {
     websocket.onopen = function (e) {
         console.log('✅ WebSocket conectado');
 
+        // 🔥 ENVIANDO INFORMACIÓN DEL VISITANTE AUTENTICADO
         websocket.send(JSON.stringify({
             type: 'join',
-            role: 'user'
+            role: 'user',
+            visitor_id: registeredVisitorId,  // 🔥 Enviar visitante autenticado
+            email: localStorage.getItem('tecai_visitor_email')  // 🔥 Enviar email
         }));
 
         // 🔥 NUEVO: Establecer timeout para cerrar automáticamente
@@ -1478,6 +1596,11 @@ function connectWebSocket(sessionId) {
         console.log('📨 WebSocket mensaje:', data);
 
         switch (data.type) {
+            case 'escalamiento':
+                console.log('🚀 Escalamiento detectado - mostrando modal');
+                addSystemMessage('✅ Tu conversación ha sido escalada a un agente humano. Espera por favor...');
+                break;
+
             case 'escalamiento_info':
                 if (data.escalado && data.usuario_nombre) {
                     humanAgentName = data.usuario_nombre;
@@ -1862,6 +1985,12 @@ async function vincularSesionExistente(email, visitanteData) {
 
         try {
             sessionStorage.setItem('email_verified', 'true');
+            sessionStorage.setItem('visitor_id', updatedVisitante.id_visitante);
+            sessionStorage.setItem('visitor_email', email);  // 🔥 GUARDAR EMAIL
+            
+            // 🔥 TAMBIÉN EN LOCALSTORAGE PARA WEBSOCKET
+            localStorage.setItem('tecai_visitor_email', email);
+            localStorage.setItem('tecai_visitor_id', updatedVisitante.id_visitante);
             sessionStorage.setItem('visitor_id', registeredVisitorId);
             localStorage.setItem('visitor_email', email);
         } catch (e) {

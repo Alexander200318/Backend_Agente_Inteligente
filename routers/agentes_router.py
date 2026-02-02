@@ -36,7 +36,7 @@ async def listar_agentes(
     limit: int = 1000, 
     db: Session = Depends(get_db)
 ):
-    """Obtiene lista de todos los agentes disponibles"""
+    """Obtiene lista de todos los agentes disponibles con toda su configuración"""
     try:
         agentes = db.query(AgenteVirtual).filter(
             AgenteVirtual.activo == True
@@ -51,7 +51,18 @@ async def listar_agentes(
                     "nombre_agente": a.nombre_agente,
                     "descripcion": a.descripcion,
                     "activo": a.activo,
-                    "mensaje_bienvenida": a.mensaje_bienvenida
+                    "tipo_agente": a.tipo_agente,
+                    "area_especialidad": a.area_especialidad,
+                    "icono": a.icono,
+                    # 🔥 NUEVO: Configuración del agente
+                    "temperatura": a.temperatura,
+                    "max_tokens": a.max_tokens,
+                    "prompt_tono": a.prompt_tono,
+                    "prompt_reglas": a.prompt_reglas,
+                    # 🔥 NUEVO: Mensajes personalizados
+                    "mensaje_bienvenida": a.mensaje_bienvenida,
+                    "mensaje_despedida": a.mensaje_despedida,
+                    "mensaje_derivacion": a.mensaje_derivacion
                 }
                 for a in agentes
             ]

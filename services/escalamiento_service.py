@@ -1,7 +1,7 @@
-# services/escalamiento_service.py
+﻿# services/escalamiento_service.py
 """
-Servicio para escalar conversaciones a atención humana
-Sistema SIMPLE con palabras clave y confirmación
+Servicio para escalar conversaciones a atenciÃ³n humana
+Sistema SIMPLE con palabras clave y confirmaciÃ³n
 """
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
@@ -37,14 +37,149 @@ class EscalamientoService:
     
     # Palabras clave para detectar escalamiento
     KEYWORDS_ESCALAMIENTO = [
+        # Palabras bÃ¡sicas
         'humano', 'persona', 'operador', 'agente',
         'hablar con alguien', 'contacto', 'ayuda real',
-        'representante', 'asesor', 'atención al cliente'
+        'representante', 'asesor', 'atenciÃ³n al cliente',
+        
+        # Variaciones de "hablar con"
+        'quiero hablar con una persona',
+        'quiero hablar con un humano',
+        'hablar con una persona',
+        'hablar con un humano',
+        'conectar con soporte',
+        'comunicarme con soporte',
+        'pasar con alguien',
+        'transferencia',
+        'derivar',
+        'derivarme',
+        'redirigir',
+        
+        # Departamentos y personas
+        'departamento',
+        'supervisor',
+        'supervisora',
+        'gerente',
+        'jefe',
+        'encargado',
+        'encargada',
+        'director',
+        'directora',
+        'administrador',
+        'administradora',
+        
+        # Tipos de soporte
+        'servicio al cliente',
+        'atenciÃ³n al cliente',
+        'servicio tÃ©cnico',
+        'soporte tÃ©cnico',
+        'atenciÃ³n prioritaria',
+        'soporte vip',
+        'urgente',
+        'problema serio',
+        'asunto importante',
+        
+        # Complejidad
+        'no entiendo',
+        'no entiendo nada',
+        'esto no funciona',
+        'no me sirve',
+        'no funciona',
+        'estÃ¡ roto',
+        'un error',
+        'hay un fallo',
+        'problema tÃ©cnico',
+        'error tÃ©cnico',
+        
+        # Reclamaciones y quejas
+        'reclamaciÃ³n',
+        'queja',
+        'reclamo',
+        'me quejo',
+        'no estoy satisfecho',
+        'no estoy satisfecha',
+        'insatisfecho',
+        'insatisfecha',
+        'esto es inaceptable',
+        
+        # Intentos previos
+        'intentÃ© antes',
+        'ya lo intentÃ©',
+        'volver a intentar',
+        'no funciona eso',
+        'ya no sirve',
+        'sigue sin funcionar',
+        
+        # Necesidades especÃ­ficas
+        'ayuda especial',
+        'ayuda humana',
+        'asistencia real',
+        'asistencia humana',
+        'necesito ayuda real',
+        'necesito ayuda de verdad',
+        'necesito hablar con alguien',
+        'preciso hablar con alguien',
+        
+        # Idioma y comunicaciÃ³n
+        'habla espaÃ±ol',
+        'hablan espaÃ±ol',
+        'en espaÃ±ol',
+        'espaÃ±ol correctamente',
+        
+        # Urgencia
+        'es urgente',
+        'urgencia',
+        'rÃ¡pido',
+        'lo antes posible',
+        'asap',
+        'ya',
+        
+        # Solicitud directa
+        'pÃ¡same',
+        'pÃ¡samelo',
+        'pÃ¡same con',
+        'pÃ¡seme',
+        'quiero hablar',
+        'prefiero hablar',
+        'deseo hablar',
+        'quisiera hablar',
+        'me gustarÃ­a hablar',
+        
+        # InsatisfacciÃ³n
+        'estoy harto',
+        'estoy cansado',
+        'tengo paciencia',
+        'cansada',
+        'ya no aguanto',
+        'esto me estresa',
+        'esto es molesto',
+        
+        # Escalamiento automÃ¡tico
+        'problema',
+        'ayuda',
+        'explicar',
+        'entender',
+        'dudas',
+        'preguntas',
+        'confusiÃ³n',
+        
+        # Variaciones formales
+        'podrÃ­a hablar con',
+        'Â¿podrÃ­a hablar con',
+        'quisiera hablar con',
+        'Â¿me pasa con',
+        'comunÃ­came con',
+        'contactame con',
+        'contacto con',
+        'comunÃ­cate conmigo',
+        'llama',
+        'llamada',
+        'llamada telefÃ³nica'
     ]
     
     # Palabras para confirmar
     KEYWORDS_CONFIRMACION = [
-        'si', 'sí', 'yes', 'ok', 'okay', 'vale', 'claro',
+        'si', 'sÃ­', 'yes', 'ok', 'okay', 'vale', 'claro',
         'adelante', 'dale', 'confirmo', 'acepto', 'quiero'
     ]
     
@@ -54,7 +189,7 @@ class EscalamientoService:
         'olvida', 'dejalo', 'espera', 'ahora no'
     ]
 
-    # 🔥🔥🔥 AGREGAR ESTO AQUÍ 🔥🔥🔥
+    # ðŸ”¥ðŸ”¥ðŸ”¥ AGREGAR ESTO AQUÃ ðŸ”¥ðŸ”¥ðŸ”¥
     KEYWORDS_FINALIZAR_ESCALAMIENTO = [
         'finalizar escalamiento',
         'terminar escalamiento',
@@ -63,14 +198,14 @@ class EscalamientoService:
         'volver a la ia',
         'volver al agente virtual',
         'ya no necesito humano',
-        'cancelar derivación',
+        'cancelar derivaciÃ³n',
         'cerrar escalamiento',
         'regresar al bot'
     ]
     
     def __init__(self, db: Session):
         self.db = db
-        # Cache en memoria para pendientes de confirmación
+        # Cache en memoria para pendientes de confirmaciÃ³n
         self._confirmaciones_pendientes = _confirmaciones_pendientes_global
     
 
@@ -78,7 +213,7 @@ class EscalamientoService:
         """Detecta si el usuario quiere hablar con un humano"""
         mensaje_lower = mensaje.lower()
         
-        # Frases más específicas
+        # Frases mÃ¡s especÃ­ficas
         frases_escalamiento = [
             # Directas
             'hablar con un humano',
@@ -91,32 +226,108 @@ class EscalamientoService:
             'hablar con soporte',
             'contactar con alguien',
             'pasame con alguien',
+            'conectame con alguien',
+            'quiero hablar con una persona',
+            'necesito persona real',
+            'quiero persona real',
+            'necesito atenciÃ³n humana',
+            'ayuda de un humano',
+            'quiero hablar con un agente',
+            'necesito hablar con agente',
+            'quiero un agente',
+            'pasame con un agente',
+            'dame un agente',
 
-            # Instituto / académico
-            'hablar con administración',
-            'hablar con secretaría',
-            'hablar con un asesor académico',
+            # Variantes comunes
+            'hablar con un especialista',
+            'hablar con un experto',
+            'hablar con un funcionario',
+            'hablar con un empleado',
+            'hablar con la oficina',
+            'quiero atenciÃ³n personalizada',
+            'necesito atenciÃ³n personalizada',
+            'quiero hablar en directo',
+            'necesito hablar en directo',
+            'conectame con alguien',
+            'me conectas',
+            'me transfieren',
+            'transferencia a agente',
+            'quiero transferencia',
+
+            # Instituto / acadÃ©mico
+            'hablar con administraciÃ³n',
+            'hablar con secretarÃ­a',
+            'hablar con un asesor acadÃ©mico',
             'hablar con un coordinador',
             'hablar con un profesor',
             'hablar con un encargado',
             'hablar con un tutor',
+            'hablar con direcciÃ³n',
+            'hablar con decanato',
+            'hablar con rectorado',
+            'quiero hablar con direcciÃ³n',
 
-
-            # Frustración / bot no ayuda
+            # FrustraciÃ³n / bot no ayuda
             'quiero hablar con alguien real',
-            'quiero atención humana',
-
+            'quiero atenciÃ³n humana',
+            'esto no funciona',
+            'no entiendes',
+            'no comprendes',
+            'no me ayudas',
+            'no me sirve',
+            'eres un bot',
+            'pareces un bot',
+            'hablo con un bot',
+            'eres un robot',
+            'no soy robot',
+            'no es suficiente',
+            'quiero mÃ¡s ayuda',
+            'necesito mÃ¡s ayuda',
+            'no puedo seguir con esto',
+            'no puedo confiar en eso',
 
             # Indirectas comunes
             'necesito ayuda personalizada',
             'quiero que me atiendan',
             'necesito hablar con alguien',
-            'quiero soporte'
+            'quiero soporte',
+            'necesito soporte',
+            'quiero informaciÃ³n de verdad',
+            'necesito informaciÃ³n real',
+            'quiero una soluciÃ³n real',
+            'hablame claro',
+            'necesito claridad',
+            'quiero hablar directo',
+            'no entiendo',
+            'explÃ­came bien',
+            'explÃ­came mejor',
+            'quiero explicaciÃ³n',
+
+            # Urgencia/Problemas
+            'es urgente',
+            'necesito rÃ¡pido',
+            'ayuda urgente',
+            'problema grave',
+            'tengo un problema grave',
+            'esto es importante',
+            'necesito ayuda ya',
+            'no puede esperar',
+            'es importante',
+
+            # TÃ©cnicas
+            'falla',
+            'bug',
+            'error',
+            'no funciona',
+            'rotura',
+            'se cayÃ³',
+            'se rompiÃ³',
+            'fallo',
         ]
         
         for frase in frases_escalamiento:
             if frase in mensaje_lower:
-                logger.info(f"🔔 Frase de escalamiento detectada: '{frase}'")
+                logger.info(f"ðŸ”” Frase de escalamiento detectada: '{frase}'")
                 return True
         
         return False
@@ -133,19 +344,19 @@ class EscalamientoService:
         # Primero buscar rechazo
         for keyword in self.KEYWORDS_RECHAZO:
             if keyword in mensaje_lower:
-                logger.info(f"❌ Keyword de rechazo detectado: '{keyword}'")
+                logger.info(f"âŒ Keyword de rechazo detectado: '{keyword}'")
                 return 'rechazar'
         
-        # Luego buscar confirmación
+        # Luego buscar confirmaciÃ³n
         for keyword in self.KEYWORDS_CONFIRMACION:
             if keyword in mensaje_lower:
-                logger.info(f"✅ Keyword de confirmación detectado: '{keyword}'")
+                logger.info(f"âœ… Keyword de confirmaciÃ³n detectado: '{keyword}'")
                 return 'confirmar'
         
-        logger.warning(f"⚠️ Respuesta indefinida: '{mensaje_lower}'")
+        logger.warning(f"âš ï¸ Respuesta indefinida: '{mensaje_lower}'")
         return 'indefinido'
     
-    # Método para agregar lógica adicional
+    # MÃ©todo para agregar lÃ³gica adicional
     def detectar_finalizacion_escalamiento(self, mensaje: str) -> bool:
         """
         Detecta si el usuario quiere finalizar el escalamiento
@@ -153,28 +364,28 @@ class EscalamientoService:
         """
         mensaje_lower = mensaje.lower().strip()
         
-        logger.info(f"🔍 Verificando finalización de escalamiento: '{mensaje}'")
+        logger.info(f"ðŸ” Verificando finalizaciÃ³n de escalamiento: '{mensaje}'")
         
         for keyword in self.KEYWORDS_FINALIZAR_ESCALAMIENTO:
             if keyword in mensaje_lower:
-                logger.info(f"🔔 Keyword de finalización detectado: '{keyword}'")
+                logger.info(f"ðŸ”” Keyword de finalizaciÃ³n detectado: '{keyword}'")
                 return True
         
-        logger.info(f"✅ No se detectó intención de finalizar escalamiento")
+        logger.info(f"âœ… No se detectÃ³ intenciÃ³n de finalizar escalamiento")
         return False
 
-    # Método para procesamiento posterior
+    # MÃ©todo para procesamiento posterior
     async def finalizar_escalamiento(
         self,
         session_id: str,
         motivo: str = "Finalizado por usuario"
     ) -> Dict[str, Any]:
         """
-        Finaliza un escalamiento activo y devuelve la conversación al agente IA
+        Finaliza un escalamiento activo y devuelve la conversaciÃ³n al agente IA
         """
         try:
             logger.info(f"=" * 80)
-            logger.info(f"🔚 FINALIZANDO ESCALAMIENTO")
+            logger.info(f"ðŸ”š FINALIZANDO ESCALAMIENTO")
             logger.info(f"   - Session ID: {session_id}")
             logger.info(f"   - Motivo: {motivo}")
             logger.info(f"=" * 80)
@@ -182,7 +393,7 @@ class EscalamientoService:
             # 1. Actualizar estado en MongoDB
             update_finalizar = ConversationUpdate(
                 estado=ConversationStatus.activa,  # Volver a activa
-                requirio_atencion_humana=True  # Mantener que requirió atención
+                requirio_atencion_humana=True  # Mantener que requiriÃ³ atenciÃ³n
             )
             
             conversacion_actualizada = await ConversationService.update_conversation(
@@ -193,11 +404,11 @@ class EscalamientoService:
             # 2. Agregar mensaje de sistema en MongoDB
             mensaje_finalizacion = MessageCreate(
                 role=MessageRole.system,
-                content=f"✅ Escalamiento finalizado. {motivo}. La conversación continúa con el agente virtual."
+                content=f"âœ… Escalamiento finalizado. {motivo}. La conversaciÃ³n continÃºa con el agente virtual."
             )
             await ConversationService.add_message(session_id, mensaje_finalizacion)
             
-            logger.info(f"✅ Estado actualizado en MongoDB: activa")
+            logger.info(f"âœ… Estado actualizado en MongoDB: activa")
             
             # 3. Actualizar en MySQL (Conversacion_Sync)
             try:
@@ -210,16 +421,16 @@ class EscalamientoService:
                     conversacion_sync.ultima_sincronizacion = datetime.utcnow()
                     self.db.commit()
                     
-                    logger.info(f"✅ Estado actualizado en MySQL: activa")
+                    logger.info(f"âœ… Estado actualizado en MySQL: activa")
                 else:
-                    logger.warning(f"⚠️ No se encontró ConversacionSync para {session_id}")
+                    logger.warning(f"âš ï¸ No se encontrÃ³ ConversacionSync para {session_id}")
                     
             except Exception as e:
-                logger.error(f"❌ Error actualizando MySQL: {e}")
+                logger.error(f"âŒ Error actualizando MySQL: {e}")
                 self.db.rollback()
             
             logger.info(f"=" * 80)
-            logger.info(f"✅ ESCALAMIENTO FINALIZADO EXITOSAMENTE")
+            logger.info(f"âœ… ESCALAMIENTO FINALIZADO EXITOSAMENTE")
             logger.info(f"=" * 80)
             
             return {
@@ -227,12 +438,12 @@ class EscalamientoService:
                 "session_id": session_id,
                 "conversacion_id": str(conversacion_actualizada.id),
                 "nuevo_estado": "activa",
-                "mensaje": "Escalamiento finalizado. Conversación devuelta al agente virtual."
+                "mensaje": "Escalamiento finalizado. ConversaciÃ³n devuelta al agente virtual."
             }
             
         except Exception as e:
             logger.error(f"=" * 80)
-            logger.error(f"❌ ERROR FINALIZANDO ESCALAMIENTO")
+            logger.error(f"âŒ ERROR FINALIZANDO ESCALAMIENTO")
             logger.error(f"   - Session ID: {session_id}")
             logger.error(f"   - Error: {str(e)}")
             logger.error(f"=" * 80)
@@ -245,87 +456,87 @@ class EscalamientoService:
 
 
     def marcar_confirmacion_pendiente(self, session_id: str):
-        """Marca que una sesión tiene confirmación pendiente"""
+        """Marca que una sesiÃ³n tiene confirmaciÃ³n pendiente"""
         self._confirmaciones_pendientes[session_id] = datetime.utcnow()
-        logger.info(f"⏳ Confirmación pendiente para session: {session_id}")
+        logger.info(f"â³ ConfirmaciÃ³n pendiente para session: {session_id}")
     
     def tiene_confirmacion_pendiente(self, session_id: str) -> bool:
-        """Verifica si hay confirmación pendiente (válida por 5 minutos)"""
+        """Verifica si hay confirmaciÃ³n pendiente (vÃ¡lida por 5 minutos)"""
         if session_id not in self._confirmaciones_pendientes:
             return False
         
         timestamp = self._confirmaciones_pendientes[session_id]
         tiempo_transcurrido = (datetime.utcnow() - timestamp).total_seconds()
         
-        # Expirar después de 5 minutos
+        # Expirar despuÃ©s de 5 minutos
         if tiempo_transcurrido > 300:
             del self._confirmaciones_pendientes[session_id]
-            logger.info(f"⏰ Confirmación expirada para session: {session_id}")
+            logger.info(f"â° ConfirmaciÃ³n expirada para session: {session_id}")
             return False
         
         return True
     
     def limpiar_confirmacion_pendiente(self, session_id: str):
-        """Limpia la confirmación pendiente"""
+        """Limpia la confirmaciÃ³n pendiente"""
         if session_id in self._confirmaciones_pendientes:
             del self._confirmaciones_pendientes[session_id]
-            logger.info(f"🗑️ Confirmación limpiada para session: {session_id}")
+            logger.info(f"ðŸ—‘ï¸ ConfirmaciÃ³n limpiada para session: {session_id}")
     
     def obtener_mensaje_confirmacion(self, agente_nombre: str) -> str:
-        """Mensaje de solicitud de confirmación"""
-        return f"""🤝 **¿Deseas hablar con un agente humano?**
+        """Mensaje de solicitud de confirmaciÃ³n"""
+        return f"""ðŸ¤ **Â¿Deseas hablar con un agente humano?**
 
-Te conectaré con una persona real del equipo de {agente_nombre}.
+Te conectarÃ© con una persona real del equipo de {agente_nombre}.
 
-⚠️ **Ten en cuenta:**
-• Esta conversación será registrada
-• Tus datos serán almacenados de forma segura
-• Un agente te atenderá en breve
+âš ï¸ **Ten en cuenta:**
+â€¢ Esta conversaciÃ³n serÃ¡ registrada
+â€¢ Tus datos serÃ¡n almacenados de forma segura
+â€¢ Un agente te atenderÃ¡ en breve
 
-**¿Confirmas que deseas continuar?**
+**Â¿Confirmas que deseas continuar?**
 
 Responde:
-✅ **"Sí"** para conectar
-❌ **"No"** para continuar aquí"""
+âœ… **"SÃ­"** para conectar
+âŒ **"No"** para continuar aquÃ­"""
     
     def obtener_mensaje_confirmado(self) -> str:
         """Mensaje cuando el usuario confirma"""
-        return """🔔 **Conectado con atención humana**
+        return """ðŸ”” **Conectado con atenciÃ³n humana**
 
-Un agente especializado se conectará contigo en breve. **Por favor espera...**
+Un agente especializado se conectarÃ¡ contigo en breve. **Por favor espera...**
 
-💡 Si deseas volver al agente virtual en cualquier momento, solo **escribe:** finalizar escalamiento o volver al bot"""
+ðŸ’¡ Si deseas volver al agente virtual en cualquier momento, solo **escribe:** finalizar escalamiento o volver al bot"""
     
     def obtener_mensaje_cancelado(self) -> str:
         """Mensaje cuando el usuario cancela"""
-        return """✅ **Seguimos aquí para ayudarte**
+        return """âœ… **Seguimos aquÃ­ para ayudarte**
 
 Entendido, **continuaremos resolviendo tu problema** juntos.
 
-¿En qué más puedo asistirte? 😊"""
+Â¿En quÃ© mÃ¡s puedo asistirte? ðŸ˜Š"""
 
     def obtener_mensaje_escalamiento_activo(self, nombre_agente: str) -> str:
-        """Mensaje cuando el escalamiento está activo y el agente se conecta"""
-        return f"""🔔 **Conectado con atención humana**
+        """Mensaje cuando el escalamiento estÃ¡ activo y el agente se conecta"""
+        return f"""ðŸ”” **Conectado con atenciÃ³n humana**
 
-**{nombre_agente}** te atenderá en breve.
+**{nombre_agente}** te atenderÃ¡ en breve.
 
-💡 Si deseas volver al agente virtual en cualquier momento, solo **escribe:** finalizar escalamiento o volver al bot"""
+ðŸ’¡ Si deseas volver al agente virtual en cualquier momento, solo **escribe:** finalizar escalamiento o volver al bot"""
 
     def obtener_mensaje_finalizacion_escalamiento(self) -> str:
         """Mensaje cuando se finaliza el escalamiento"""
-        return """✅ **Escalamiento finalizado**
+        return """âœ… **Escalamiento finalizado**
 
-**Has vuelto al agente virtual.** Ahora puedes continuar tu conversación normalmente. 😊
+**Has vuelto al agente virtual.** Ahora puedes continuar tu conversaciÃ³n normalmente. ðŸ˜Š
 
-**Recuerda:** Desde ahora tus mensajes serán procesados por la IA."""
+**Recuerda:** Desde ahora tus mensajes serÃ¡n procesados por la IA."""
 
     def obtener_modal_confirmacion(self) -> dict:
-        """Estructura del modal de confirmación de escalamiento para el widget"""
+        """Estructura del modal de confirmaciÃ³n de escalamiento para el widget"""
         return {
             "type": "confirmacion_escalamiento_modal",
-            "titulo": "🤝 Hablar con un agente",
-            "descripcion": "¿Deseas conectar con un agente humano para recibir atención personalizada?"
+            "titulo": "ðŸ¤ Hablar con un agente",
+            "descripcion": "Â¿Deseas conectar con un agente humano para recibir atenciÃ³n personalizada?"
         }
 
     async def escalar_conversacion(
@@ -334,9 +545,9 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
         id_agente: int,
         motivo: str = "Solicitado por usuario"
     ) -> Dict[str, Any]:
-        """Escala conversación a humano"""
+        """Escala conversaciÃ³n a humano"""
         try:
-            # Actualizar conversación a escalada
+            # Actualizar conversaciÃ³n a escalada
             update_escalado = ConversationUpdate(
                 estado=ConversationStatus.escalada_humano,
                 requirio_atencion_humana=True
@@ -348,11 +559,11 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             
             mensaje_escalamiento = MessageCreate(
                 role=MessageRole.system,
-                content=f"🔔 Conversación escalada a atención humana. Motivo: {motivo}"
+                content=f"ðŸ”” ConversaciÃ³n escalada a atenciÃ³n humana. Motivo: {motivo}"
             )
             await ConversationService.add_message(session_id, mensaje_escalamiento)
             
-            logger.info(f"✅ Conversación escalada en MongoDB: {session_id}")
+            logger.info(f"âœ… ConversaciÃ³n escalada en MongoDB: {session_id}")
             
             # Asignar funcionario
             funcionario_asignado = None
@@ -371,11 +582,11 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 if id_departamento:
                     funcionarios = self._obtener_usuarios_departamento(id_departamento)
                     
-                    # 🔥 NUEVO: Verificar si hay funcionarios disponibles
+                    # ðŸ”¥ NUEVO: Verificar si hay funcionarios disponibles
                     if not funcionarios:
-                        # ❌ NO HAY FUNCIONARIOS DISPONIBLES
+                        # âŒ NO HAY FUNCIONARIOS DISPONIBLES
                         #logger.error(f"=" * 80)
-                        logger.error(f"❌ SIN FUNCIONARIOS DISPONIBLES")
+                        logger.error(f"âŒ SIN FUNCIONARIOS DISPONIBLES")
                         #logger.error(f"   - Departamento: {id_departamento}")
                         #logger.error(f"   - Agente: {agente.nombre_agente}")
                         #logger.error(f"=" * 80)
@@ -384,15 +595,15 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                         #mensaje_sin_disponibles = MessageCreate(
                         #    role=MessageRole.system,
                         #    content=(
-                        #        "⚠️ **No hay encargados disponibles en este momento**\n\n"
+                        #        "âš ï¸ **No hay encargados disponibles en este momento**\n\n"
                         #        f"Actualmente no hay personal disponible en el departamento de {agente.nombre_agente}.\n\n"
-                        #        "Por favor, intenta nuevamente más tarde o contacta con nosotros por otros medios.\n\n"
-                        #        "Disculpa las molestias. 🙏"
+                        #        "Por favor, intenta nuevamente mÃ¡s tarde o contacta con nosotros por otros medios.\n\n"
+                        #        "Disculpa las molestias. ðŸ™"
                         #    )
                         #)
                         #await ConversationService.add_message(session_id, mensaje_sin_disponibles)
                         
-                        # 🔥 REVERTIR ESTADO DE CONVERSACIÓN
+                        # ðŸ”¥ REVERTIR ESTADO DE CONVERSACIÃ“N
                         update_revertir = ConversationUpdate(
                             estado=ConversationStatus.activa,
                             requirio_atencion_humana=False
@@ -409,7 +620,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                             "usuarios_notificados": 0
                         }
                     
-                    # ✅ SÍ HAY FUNCIONARIOS DISPONIBLES
+                    # âœ… SÃ HAY FUNCIONARIOS DISPONIBLES
                     funcionario_asignado = funcionarios[0]
                     
                     nombre_completo = (
@@ -426,11 +637,11 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                         update_asignacion
                     )
                     
-                    logger.info(f"✅ Conversación asignada a: {nombre_completo}")
+                    logger.info(f"âœ… ConversaciÃ³n asignada a: {nombre_completo}")
                     
                     mensaje_asignacion = MessageCreate(
                         role=MessageRole.system,
-                        content=f"📌 Conversación asignada a {nombre_completo}"
+                        content=f"ðŸ“Œ ConversaciÃ³n asignada a {nombre_completo}"
                     )
                     await ConversationService.add_message(session_id, mensaje_asignacion)
                     
@@ -443,7 +654,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                     )
                             
             except Exception as e:
-                logger.error(f"❌ Error en asignación de funcionario: {e}")
+                logger.error(f"âŒ Error en asignaciÃ³n de funcionario: {e}")
 
             # Crear/actualizar registro en MySQL
             try:
@@ -474,7 +685,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 self.db.commit()
                 
             except Exception as e:
-                logger.error(f"❌ Error en ConversacionSync MySQL: {e}")
+                logger.error(f"âŒ Error en ConversacionSync MySQL: {e}")
                 self.db.rollback()
             
             return {
@@ -489,11 +700,11 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                     ) if funcionario_asignado else None
                 },
                 "usuarios_notificados": usuarios_notificados,
-                "mensaje": "Conversación escalada correctamente." if funcionario_asignado else "Conversación escalada sin asignación."
+                "mensaje": "ConversaciÃ³n escalada correctamente." if funcionario_asignado else "ConversaciÃ³n escalada sin asignaciÃ³n."
             }
             
         except Exception as e:
-            logger.error(f"❌ Error escalando conversación: {e}")
+            logger.error(f"âŒ Error escalando conversaciÃ³n: {e}")
             self.db.rollback()
             raise
 
@@ -505,7 +716,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
         agente_nombre: str,
         motivo: str
     ) -> int:
-        """Crea notificación para el funcionario asignado"""
+        """Crea notificaciÃ³n para el funcionario asignado"""
         try:
             nombre_funcionario = f"{funcionario.persona.nombre} {funcionario.persona.apellido}"
     
@@ -513,8 +724,8 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 id_usuario=funcionario.id_usuario,
                 id_agente=id_agente,
                 tipo=TipoNotificacionEnum.urgente,
-                titulo=f'Nueva conversación asignada - {agente_nombre}',
-                mensaje=f'Se te ha asignado una conversación del agente {agente_nombre}. Motivo: {motivo}',
+                titulo=f'Nueva conversaciÃ³n asignada - {agente_nombre}',
+                mensaje=f'Se te ha asignado una conversaciÃ³n del agente {agente_nombre}. Motivo: {motivo}',
                 icono='arrow-up-circle',
                 url_accion=f'/conversaciones-escaladas/{session_id}',
                 datos_adicionales=f'{{"session_id": "{session_id}", "id_agente": {id_agente}, "motivo": "{motivo}"}}',
@@ -525,16 +736,16 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             self.db.add(notificacion)
             self.db.commit()
             
-            logger.info(f"✅ Notificación creada para {nombre_funcionario}")
+            logger.info(f"âœ… NotificaciÃ³n creada para {nombre_funcionario}")
             return 1
             
         except Exception as e:
-            logger.error(f"❌ Error creando notificación: {e}")
+            logger.error(f"âŒ Error creando notificaciÃ³n: {e}")
             self.db.rollback()
             return 0
 
     async def _obtener_o_crear_visitante(self, session_id: str) -> VisitanteAnonimo:
-        """Obtiene o crea un visitante anónimo"""
+        """Obtiene o crea un visitante anÃ³nimo"""
         try:
             visitante = self.db.query(VisitanteAnonimo).filter(
                 VisitanteAnonimo.identificador_sesion == session_id
@@ -551,7 +762,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 self.db.commit()
                 self.db.refresh(visitante)
                 
-                logger.info(f"✅ Nuevo visitante creado: {visitante.id_visitante}")
+                logger.info(f"âœ… Nuevo visitante creado: {visitante.id_visitante}")
             else:
                 visitante.ultima_visita = datetime.utcnow()
                 self.db.commit()
@@ -559,7 +770,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             return visitante
             
         except Exception as e:
-            logger.error(f"❌ Error obteniendo/creando visitante: {e}")
+            logger.error(f"âŒ Error obteniendo/creando visitante: {e}")
             self.db.rollback()
             raise
     
@@ -590,7 +801,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                     
                     cierre_message = MessageCreate(
                         role=MessageRole.system,
-                        content=f"Conversación finalizada por inactividad ({timeout_minutos} minutos)"
+                        content=f"ConversaciÃ³n finalizada por inactividad ({timeout_minutos} minutos)"
                     )
                     await ConversationService.add_message(session_id, cierre_message)
                     
@@ -607,7 +818,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                         finalizadas_mysql += 1
                     
                 except Exception as e:
-                    logger.error(f"❌ Error finalizando conversación: {e}")
+                    logger.error(f"âŒ Error finalizando conversaciÃ³n: {e}")
             
             if finalizadas_mysql > 0:
                 self.db.commit()
@@ -621,7 +832,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             }
             
         except Exception as e:
-            logger.error(f"❌ Error finalizando conversaciones inactivas: {e}")
+            logger.error(f"âŒ Error finalizando conversaciones inactivas: {e}")
             self.db.rollback()
             raise
     
@@ -630,19 +841,19 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
         """
         Obtiene UN funcionario DISPONIBLE del departamento
         
-        🔥 NUEVO COMPORTAMIENTO:
+        ðŸ”¥ NUEVO COMPORTAMIENTO:
         - Solo funcionarios con disponible=True
         - Del mismo departamento del agente
         - Con rol activo de nivel 3 (funcionario)
         - Estado activo
         
         Returns:
-            List[Usuario]: Lista con 1 funcionario disponible, o lista vacía si no hay
+            List[Usuario]: Lista con 1 funcionario disponible, o lista vacÃ­a si no hay
         """
         try:
-            logger.info(f"🔍 Buscando funcionarios DISPONIBLES en departamento {id_departamento}")
+            logger.info(f"ðŸ” Buscando funcionarios DISPONIBLES en departamento {id_departamento}")
             
-            # 🔥 QUERY CON FILTRO DE DISPONIBILIDAD
+            # ðŸ”¥ QUERY CON FILTRO DE DISPONIBILIDAD
             funcionarios_disponibles = self.db.query(Usuario).join(
                 Persona, Usuario.id_persona == Persona.id_persona
             ).join(
@@ -650,9 +861,9 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             ).join(
                 Rol, UsuarioRol.id_rol == Rol.id_rol
             ).filter(
-                # 🔥 FILTROS CRÍTICOS
+                # ðŸ”¥ FILTROS CRÃTICOS
                 Persona.id_departamento == id_departamento,  # Mismo departamento
-                Usuario.disponible == True,                  # ✅ DISPONIBLE
+                Usuario.disponible == True,                  # âœ… DISPONIBLE
                 Usuario.estado == 'activo',                  # Usuario activo
                 Persona.estado == 'activo',                  # Persona activa
                 UsuarioRol.activo == True,                   # Rol asignado activo
@@ -660,9 +871,9 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 Rol.nivel_jerarquia == 3                     # Solo funcionarios
             ).distinct().all()
             
-            # 🔥 LOGS DETALLADOS
+            # ðŸ”¥ LOGS DETALLADOS
             logger.info(f"=" * 80)
-            logger.info(f"📊 RESULTADO BÚSQUEDA DE FUNCIONARIOS")
+            logger.info(f"ðŸ“Š RESULTADO BÃšSQUEDA DE FUNCIONARIOS")
             logger.info(f"   - Departamento: {id_departamento}")
             logger.info(f"   - Funcionarios disponibles encontrados: {len(funcionarios_disponibles)}")
             
@@ -670,20 +881,20 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 for i, func in enumerate(funcionarios_disponibles, 1):
                     logger.info(f"   [{i}] {func.username} (ID: {func.id_usuario}) - {func.persona.nombre} {func.persona.apellido}")
             else:
-                logger.warning(f"   ⚠️ NO HAY FUNCIONARIOS DISPONIBLES")
+                logger.warning(f"   âš ï¸ NO HAY FUNCIONARIOS DISPONIBLES")
             
             logger.info(f"=" * 80)
             
-            # 🔥 RETORNAR VACÍO SI NO HAY DISPONIBLES
+            # ðŸ”¥ RETORNAR VACÃO SI NO HAY DISPONIBLES
             if not funcionarios_disponibles:
-                logger.warning(f"❌ No hay funcionarios DISPONIBLES en departamento {id_departamento}")
+                logger.warning(f"âŒ No hay funcionarios DISPONIBLES en departamento {id_departamento}")
                 return []
             
-            # 🔥 SELECCIONAR ALEATORIAMENTE ENTRE LOS DISPONIBLES
+            # ðŸ”¥ SELECCIONAR ALEATORIAMENTE ENTRE LOS DISPONIBLES
             funcionario_seleccionado = random.choice(funcionarios_disponibles)
             
             logger.info(f"=" * 80)
-            logger.info(f"✅ FUNCIONARIO SELECCIONADO")
+            logger.info(f"âœ… FUNCIONARIO SELECCIONADO")
             logger.info(f"   - Username: {funcionario_seleccionado.username}")
             logger.info(f"   - ID: {funcionario_seleccionado.id_usuario}")
             logger.info(f"   - Nombre: {funcionario_seleccionado.persona.nombre} {funcionario_seleccionado.persona.apellido}")
@@ -695,7 +906,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             
         except Exception as e:
             logger.error(f"=" * 80)
-            logger.error(f"❌ ERROR OBTENIENDO FUNCIONARIO")
+            logger.error(f"âŒ ERROR OBTENIENDO FUNCIONARIO")
             logger.error(f"   - Departamento: {id_departamento}")
             logger.error(f"   - Error: {str(e)}")
             logger.error(f"=" * 80)
@@ -729,7 +940,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 )
                 await ConversationService.update_conversation(session_id, update_data)
             
-            logger.info(f"💬 Respuesta humana: {nombre_usuario} → {session_id}")
+            logger.info(f"ðŸ’¬ Respuesta humana: {nombre_usuario} â†’ {session_id}")
             
             return {
                 "success": True,
@@ -739,7 +950,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             }
             
         except Exception as e:
-            logger.error(f"❌ Error agregando respuesta humana: {e}")
+            logger.error(f"âŒ Error agregando respuesta humana: {e}")
             raise
     
     def obtener_conversaciones_escaladas(
@@ -771,7 +982,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 ConversacionSync.fecha_inicio.desc()
             ).limit(50).all()
             
-            logger.info(f"📋 Conversaciones escaladas: {len(conversaciones)}")
+            logger.info(f"ðŸ“‹ Conversaciones escaladas: {len(conversaciones)}")
             
             return [
                 {
@@ -786,14 +997,14 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             ]
             
         except Exception as e:
-            logger.error(f"❌ Error obteniendo conversaciones escaladas: {e}")
+            logger.error(f"âŒ Error obteniendo conversaciones escaladas: {e}")
             return []
         
     # services/escalamiento_service.py
     class EscalamientoService:
-        # ... código existente ...
+        # ... cÃ³digo existente ...
         
-        # 🔥 NUEVO: Keywords para finalizar escalamiento
+        # ðŸ”¥ NUEVO: Keywords para finalizar escalamiento
         KEYWORDS_FINALIZAR_ESCALAMIENTO = [
             'finalizar escalamiento',
             'terminar escalamiento',
@@ -802,7 +1013,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             'volver a la ia',
             'volver al agente virtual',
             'ya no necesito humano',
-            'cancelar derivación',
+            'cancelar derivaciÃ³n',
             'cerrar escalamiento',
             'regresar al bot'
         ]
@@ -814,11 +1025,11 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             """
             mensaje_lower = mensaje.lower().strip()
             
-            logger.info(f"🔍 Verificando finalización de escalamiento: '{mensaje}'")
+            logger.info(f"ðŸ” Verificando finalizaciÃ³n de escalamiento: '{mensaje}'")
             
             for keyword in self.KEYWORDS_FINALIZAR_ESCALAMIENTO:
                 if keyword in mensaje_lower:
-                    logger.info(f"🔔 Keyword de finalización detectado: '{keyword}'")
+                    logger.info(f"ðŸ”” Keyword de finalizaciÃ³n detectado: '{keyword}'")
                     return True
             
             return False
@@ -829,11 +1040,11 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
             motivo: str = "Finalizado por usuario"
         ) -> Dict[str, Any]:
             """
-            Finaliza un escalamiento activo y devuelve la conversación al agente IA
+            Finaliza un escalamiento activo y devuelve la conversaciÃ³n al agente IA
             """
             try:
                 logger.info(f"=" * 80)
-                logger.info(f"🔚 FINALIZANDO ESCALAMIENTO")
+                logger.info(f"ðŸ”š FINALIZANDO ESCALAMIENTO")
                 logger.info(f"   - Session ID: {session_id}")
                 logger.info(f"   - Motivo: {motivo}")
                 logger.info(f"=" * 80)
@@ -841,7 +1052,7 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 # 1. Actualizar estado en MongoDB
                 update_finalizar = ConversationUpdate(
                     estado=ConversationStatus.activa,  # Volver a activa
-                    requirio_atencion_humana=True  # Mantener que requirió atención
+                    requirio_atencion_humana=True  # Mantener que requiriÃ³ atenciÃ³n
                 )
                 
                 conversacion_actualizada = await ConversationService.update_conversation(
@@ -852,11 +1063,11 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                 # 2. Agregar mensaje de sistema en MongoDB
                 mensaje_finalizacion = MessageCreate(
                     role=MessageRole.system,
-                    content=f"✅ Escalamiento finalizado. {motivo}. La conversación continúa con el agente virtual."
+                    content=f"âœ… Escalamiento finalizado. {motivo}. La conversaciÃ³n continÃºa con el agente virtual."
                 )
                 await ConversationService.add_message(session_id, mensaje_finalizacion)
                 
-                logger.info(f"✅ Estado actualizado en MongoDB: activa")
+                logger.info(f"âœ… Estado actualizado en MongoDB: activa")
                 
                 # 3. Actualizar en MySQL (Conversacion_Sync)
                 try:
@@ -869,16 +1080,16 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                         conversacion_sync.ultima_sincronizacion = datetime.utcnow()
                         self.db.commit()
                         
-                        logger.info(f"✅ Estado actualizado en MySQL: activa")
+                        logger.info(f"âœ… Estado actualizado en MySQL: activa")
                     else:
-                        logger.warning(f"⚠️ No se encontró ConversacionSync para {session_id}")
+                        logger.warning(f"âš ï¸ No se encontrÃ³ ConversacionSync para {session_id}")
                         
                 except Exception as e:
-                    logger.error(f"❌ Error actualizando MySQL: {e}")
+                    logger.error(f"âŒ Error actualizando MySQL: {e}")
                     self.db.rollback()
                 
                 logger.info(f"=" * 80)
-                logger.info(f"✅ ESCALAMIENTO FINALIZADO EXITOSAMENTE")
+                logger.info(f"âœ… ESCALAMIENTO FINALIZADO EXITOSAMENTE")
                 logger.info(f"=" * 80)
                 
                 return {
@@ -886,12 +1097,12 @@ Entendido, **continuaremos resolviendo tu problema** juntos.
                     "session_id": session_id,
                     "conversacion_id": str(conversacion_actualizada.id),
                     "nuevo_estado": "activa",
-                    "mensaje": "Escalamiento finalizado. Conversación devuelta al agente virtual."
+                    "mensaje": "Escalamiento finalizado. ConversaciÃ³n devuelta al agente virtual."
                 }
                 
             except Exception as e:
                 logger.error(f"=" * 80)
-                logger.error(f"❌ ERROR FINALIZANDO ESCALAMIENTO")
+                logger.error(f"âŒ ERROR FINALIZANDO ESCALAMIENTO")
                 logger.error(f"   - Session ID: {session_id}")
                 logger.error(f"   - Error: {str(e)}")
                 logger.error(f"=" * 80)

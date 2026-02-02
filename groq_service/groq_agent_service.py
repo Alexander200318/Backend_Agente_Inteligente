@@ -616,6 +616,27 @@ Importante: Responde BASÁNDOTE ÚNICAMENTE en el contexto anterior. Si la pregu
                 "timestamp": str(__import__('datetime').datetime.now().isoformat())
             }
             
+            # 🔥 NUEVO: Enviar contenidos consultados ANTES de empezar el stream
+            if documentos:
+                contenidos_para_enviar = []
+                for doc in documentos:
+                    meta = doc.get('metadata', {})
+                    contenidos_para_enviar.append({
+                        'id': meta.get('id'),
+                        'titulo': meta.get('titulo', doc.get('document', '')[:100]),
+                        'tipo': meta.get('tipo', 'documento'),
+                        'categoria': meta.get('categoria'),
+                        'contenido': doc.get('document', ''),
+                        'score': doc.get('score', 0.0)
+                    })
+                
+                yield {
+                    "type": "sources",
+                    "sources": contenidos_para_enviar,
+                    "total_sources": len(contenidos_para_enviar)
+                }
+                logger.info(f"📚 Enviando {len(contenidos_para_enviar)} fuentes consultadas")
+            
             # Streaming de respuesta
             for chunk in self.client.streaming_chat(
                 messages=messages,

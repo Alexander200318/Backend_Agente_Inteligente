@@ -68,6 +68,10 @@ class TomarConversacionRequest(BaseModel):
     id_usuario: int
     nombre_usuario: str
 
+class ConfirmarEscalamientoRequest(BaseModel):
+    """Request para confirmar escalamiento desde el widget"""
+    session_id: str
+
 class CambiarDisponibilidadRequest(BaseModel):
     """Request para cambiar disponibilidad de funcionario"""
     disponible: bool
@@ -322,6 +326,59 @@ async def obtener_conversacion_detalle(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error obteniendo conversación: {str(e)}"
+        )
+
+
+@router.post("/confirmar")
+async def confirmar_escalamiento(
+    request: ConfirmarEscalamientoRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    🔥 NUEVO: Confirmar escalamiento desde el widget
+    
+    Cuando el usuario hace clic en "Sí, conectar" en el modal,
+    este endpoint realiza el escalamiento final
+    
+    Body:
+    - session_id: ID de la sesión
+    
+    Returns:
+        Confirmación del escalamiento
+    """
+    try:
+        logger.info(f"🤝 Confirmando escalamiento para session {request.session_id}")
+        
+        escalamiento_service = EscalamientoService(db)
+        
+        # Realizar escalamiento
+        resultado = await escalamiento_service.escalar_conversacion(
+            session_id=request.session_id,
+            motivo="Usuario confirmó desde modal de escalamiento"
+        )
+        
+        if resultado.get('ok', False):
+            logger.info(f"✅ Escalamiento confirmado: {request.session_id}")
+            return {
+                "ok": True,
+                "mensaje": "Escalamiento realizado",
+                "session_id": request.session_id,
+                "resultado": resultado
+            }
+        else:
+            logger.warning(f"⚠️ Error confirmando escalamiento: {resultado}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se pudo realizar el escalamiento: {resultado.get('error', 'Error desconocido')}"
+            )
+    
+    except Exception as e:
+        logger.error(f"❌ Error en confirmar escalamiento: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error confirmando escalamiento: {str(e)}"
         )
 
 

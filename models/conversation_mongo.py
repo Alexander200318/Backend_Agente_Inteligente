@@ -13,6 +13,19 @@ class MessageRole(str, Enum):
     human_agent = "human_agent"
 
 
+class ContentReference(BaseModel):
+    """Referencia a contenido consultado durante el mensaje"""
+    id_unidad_contenido: Optional[int] = None
+    titulo: Optional[str] = None
+    tipo_contenido: Optional[str] = None  # 'documento', 'faq', 'articulo', etc
+    chunk_text: Optional[str] = None  # Fragmento del contenido usado
+    relevancia_score: Optional[float] = None  # Score de similitud (0-1)
+    categoria: Optional[str] = None
+    
+    class Config:
+        use_enum_values = True
+
+
 class Message(BaseModel):
     """Modelo de un mensaje individual"""
     role: Union[MessageRole, str]  # 🔥 Acepta tanto Enum como string
@@ -23,6 +36,10 @@ class Message(BaseModel):
     sources_used: Optional[int] = None
     model_used: Optional[str] = None
     token_count: Optional[int] = None
+    
+    # 🔥 NUEVO: Contenidos consultados durante este mensaje
+    contenidos_consultados: List[ContentReference] = Field(default_factory=list)
+    total_contenidos_usados: int = 0  # Cantidad total de fuentes
     
     # Para mensajes de humano
     user_id: Optional[int] = None
@@ -148,6 +165,10 @@ class MessageCreate(BaseModel):
     sources_used: Optional[int] = None
     model_used: Optional[str] = None
     token_count: Optional[int] = None
+    
+    # 🔥 NUEVO: Contenidos consultados
+    contenidos_consultados: Optional[List[ContentReference]] = Field(default_factory=list)
+    total_contenidos_usados: Optional[int] = None
     
     # Para mensajes de humano
     user_id: Optional[int] = None

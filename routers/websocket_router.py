@@ -50,12 +50,20 @@ async def websocket_chat_endpoint(
         "type": "join",
         "user_id": 123,
         "user_name": "Juan Pérez",
-        "role": "human" | "user"
+        "role": "human" | "user",
+        "visitor_id": 456,  // 🔥 ID del visitante autenticado
+        "email": "usuario@email.com"  // 🔥 Email del visitante
     }
     """
     
     await manager.connect(websocket, session_id)
     escalamiento_service = EscalamientoService(db)
+    
+    # 🔥 VARIABLES PARA GUARDAR VISITANTE AUTENTICADO
+    visitor_id = None
+    visitor_email = None
+    selected_agent_id = None
+    selected_agent_name = None
     
     try:
         # ============================================
@@ -142,6 +150,45 @@ async def websocket_chat_endpoint(
 
 
 
+                # ============================================
+                # 🔥 DETECCIÓN DE ESCALAMIENTO (usuario quiere humano)
+                # ============================================
+                if not user_id:  # Solo para mensajes del usuario (widget)
+                    quiere_escalamiento = escalamiento_service.detectar_intencion_escalamiento(content)
+                    
+                    if quiere_escalamiento:
+                        logger.info(f"🚀 Intención de escalamiento detectada: '{content}'")
+                        
+                        try:
+                            # Obtener conversación
+                            conversation = await ConversationService.get_conversation_by_session(session_id)
+                            
+                            if conversation and conversation.metadata.estado != "escalada_humano":
+                                # Realizar escalamiento
+                                resultado = await escalamiento_service.escalar_conversacion(
+                                    session_id=session_id,
+                                    motivo=f"Usuario solicita: {content[:100]}"
+                                )
+                                
+                                if resultado.get('ok', False):
+                                    logger.info(f"✅ Escalamiento realizado para {session_id}")
+                                    
+                                    # Notificar al usuario
+                                    mensaje_escalamiento = {
+                                        "type": "escalamiento",
+                                        "role": "system",
+                                        "content": "✅ Tu conversación ha sido escalada a un agente humano. Espera por favor...",
+                                        "timestamp": datetime.utcnow().isoformat()
+                                    }
+                                    await manager.broadcast(mensaje_escalamiento, session_id)
+                                else:
+                                    logger.warning(f"⚠️ No se pudo realizar escalamiento: {resultado}")
+                                    
+                        except Exception as e:
+                            logger.error(f"❌ Error en escalamiento: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
+                
                 # 🔥🔥🔥 AGREGAR TODO ESTE BLOQUE AQUÍ 🔥🔥🔥
                 # ============================================
                 # 🔥 DETECCIÓN DE FINALIZACIÓN DE ESCALAMIENTO
@@ -209,6 +256,27 @@ async def websocket_chat_endpoint(
                 # 🔥 GUARDAR EN MONGODB (SIEMPRE)
                 # ============================================
                 try:
+                    # 🔥 VERIFICAR SI LA CONVERSACIÓN EXISTE
+                    existing_conv = await ConversationService.get_conversation_by_session(session_id)
+                    
+                    if not existing_conv:
+                        logger.warning(f"⚠️ Conversación no existe, creando nueva: {session_id}")
+                        
+                        # 🔥 CREAR CON INFORMACIÓN DEL VISITANTE AUTENTICADO
+                        conv_create = ConversationCreate(
+                            session_id=session_id,
+                            id_agente=1,  # Agente por defecto
+                            agent_name="Agente Virtual",
+                            agent_type="virtual",
+                            origin="widget",
+                            id_visitante=visitor_id  # 🔥 GUARDAR VISITANTE AUTENTICADO
+                        )
+                        existing_conv = await ConversationService.create_conversation(conv_create)
+                        logger.info(f"✅ Conversación creada: {session_id}")
+                        logger.info(f"   - Visitante: {visitor_id}")
+                        logger.info(f"   - Email: {visitor_email}")
+                    
+                    # Ahora guardar el mensaje
                     message = MessageCreate(
                         role=role,
                         content=content,
@@ -258,6 +326,14 @@ async def websocket_chat_endpoint(
                 user_name = message_data.get("user_name", "Usuario")
                 role = message_data.get("role", "user")
                 user_id = message_data.get("user_id")
+                
+                # 🔥 GUARDAR VISITOR AUTENTICADO SI VIENE DEL WIDGET
+                if role == "user":
+                    visitor_id = message_data.get("visitor_id")  # 🔥 ID del visitante
+                    visitor_email = message_data.get("email")  # 🔥 Email del visitante
+                    
+                    if visitor_id:
+                        logger.info(f"👤 Visitante autenticado: ID={visitor_id}, Email={visitor_email}")
                 
                 await manager.broadcast({
                     "type": "user_joined",
