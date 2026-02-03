@@ -8,7 +8,7 @@ from html import escape
 class DepartamentoBase(BaseModel):
     nombre: str = Field(..., min_length=5, max_length=100, description="Nombre del departamento")
     descripcion: Optional[str] = Field(None, max_length=500, description="Descripción del departamento")
-    codigo: str = Field(..., min_length=2, max_length=50, description="Código único del departamento")
+    codigo: str = Field(..., min_length=3, max_length=50, description="Código único del departamento")
     email: Optional[EmailStr] = Field(None, max_length=100, description="Email de contacto")
     telefono: Optional[str] = Field(None, max_length=20, description="Número de teléfono")
     ubicacion: Optional[str] = Field(None, max_length=200, description="Ubicación física")
@@ -93,7 +93,7 @@ class DepartamentoBase(BaseModel):
     def validate_codigo(cls, v: str) -> str:
         """
         Validación de código:
-        - Mínimo 2 caracteres
+        - Mínimo 3 caracteres (coincide con frontend)
         - Máximo 50 caracteres (coincide con frontend)
         - Solo letras, números, guiones (-) y guiones bajos (_)
         - Se convierte a mayúsculas
@@ -103,8 +103,8 @@ class DepartamentoBase(BaseModel):
         
         v_stripped = v.strip()
         
-        if len(v_stripped) < 2:
-            raise ValueError("El código debe tener al menos 2 caracteres")
+        if len(v_stripped) < 3:
+            raise ValueError("El código debe tener al menos 3 caracteres")
         
         if len(v_stripped) > 50:
             raise ValueError("El código no puede exceder 50 caracteres")
@@ -206,7 +206,7 @@ class DepartamentoUpdate(BaseModel):
     """Schema para actualizar un departamento (todos los campos opcionales)"""
     nombre: Optional[str] = Field(None, min_length=5, max_length=100)
     descripcion: Optional[str] = Field(None, max_length=500)
-    codigo: Optional[str] = Field(None, min_length=2, max_length=50)
+    codigo: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = Field(None, max_length=100)
     telefono: Optional[str] = Field(None, max_length=20)
     ubicacion: Optional[str] = Field(None, max_length=200)
@@ -269,8 +269,8 @@ class DepartamentoUpdate(BaseModel):
         if v is None:
             return None
         v_stripped = v.strip()
-        if len(v_stripped) < 2:
-            raise ValueError("El código debe tener al menos 2 caracteres")
+        if len(v_stripped) < 3:
+            raise ValueError("El código debe tener al menos 3 caracteres")
         if len(v_stripped) > 50:
             raise ValueError("El código no puede exceder 50 caracteres")
         if not re.match(r'^[A-Za-z0-9_-]+$', v_stripped):
