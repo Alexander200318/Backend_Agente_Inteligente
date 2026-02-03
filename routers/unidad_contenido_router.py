@@ -33,7 +33,7 @@ def listar_contenidos(
     limit: int = 100,
     include_deleted: bool = Query(False, description="Incluir contenidos eliminados"),
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 Usuario autenticado requerido
+    current_user: Usuario = Depends(get_current_user)  # 🔥 Usuario autenticado
 ):
     """Lista contenidos de un agente con filtros opcionales"""
     return UnidadContenidoService(db).listar_por_agente(

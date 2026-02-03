@@ -70,37 +70,11 @@ def listar_categorias(
     )
 
 # ======================================================
-# 🔹 Obtener una categoría por ID
-# GET /categorias/3
-# ======================================================
-@router.get(
-    "/{id_categoria}",
-    response_model=CategoriaResponse
-)
-@router.get(
-    "/{id_categoria}/",
-    response_model=CategoriaResponse
-)
-def obtener_categoria_por_id(
-    id_categoria: int,
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 Autenticación requerida
-):
-    """
-    Obtiene los detalles de una categoría específica por su ID.
-    """
-    return CategoriaService(db).obtener_categoria_por_id(id_categoria)
-
-# ======================================================
 # 🔹 Listar categorías por agente
 # GET /categorias/agente/1?activo=true
 # ======================================================
 @router.get(
     "/agente/{id_agente}",
-    response_model=List[CategoriaResponse]
-)
-@router.get(
-    "/agente/{id_agente}/",
     response_model=List[CategoriaResponse]
 )
 def listar_por_agente(
@@ -109,8 +83,7 @@ def listar_por_agente(
         None,
         description="Filtrar por estado activo (true / false)"
     ),
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_user)  # 🔥 Autenticación requerida
+    db: Session = Depends(get_db)
 ):
     """
     Lista categorías de un agente específico.
@@ -127,10 +100,6 @@ def listar_por_agente(
 # ======================================================
 @router.put(
     "/{id_categoria}",
-    response_model=CategoriaResponse
-)
-@router.put(
-    "/{id_categoria}/",
     response_model=CategoriaResponse
 )
 def actualizar_categoria(
@@ -162,10 +131,6 @@ def actualizar_categoria(
 # ======================================================
 @router.delete(
     "/{id_categoria}",
-    status_code=status.HTTP_200_OK
-)
-@router.delete(
-    "/{id_categoria}/",
     status_code=status.HTTP_200_OK
 )
 def eliminar_categoria(

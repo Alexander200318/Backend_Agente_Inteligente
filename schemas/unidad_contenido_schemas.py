@@ -7,7 +7,7 @@ from html import escape
 
 class UnidadContenidoBase(BaseModel):
     titulo: str = Field(..., min_length=5, max_length=200, description="Título del contenido")
-    contenido: str = Field(..., min_length=1, max_length=50000, description="Contenido detallado")
+    contenido: str = Field(..., min_length=50, max_length=50000, description="Contenido detallado")
     resumen: Optional[str] = Field(None, min_length=10, max_length=2000, description="Resumen breve")
     palabras_clave: Optional[str] = Field(None, min_length=3, max_length=1000, description="Palabras clave separadas por comas")
     etiquetas: Optional[str] = Field(None, min_length=3, max_length=1000, description="Etiquetas separadas por comas")
@@ -85,8 +85,8 @@ class UnidadContenidoBase(BaseModel):
     @classmethod
     def validate_contenido_length(cls, v: str) -> str:
         """Validación específica de contenido"""
-        if len(v.strip()) < 1:
-            raise ValueError(f"El contenido no puede estar vacío")
+        if len(v.strip()) < 50:
+            raise ValueError(f"El contenido debe tener al menos 50 caracteres (actual: {len(v.strip())})")
         if len(v) > 50000:
             raise ValueError(f"El contenido es demasiado largo (máx 50000 caracteres)")
         return v
@@ -190,7 +190,7 @@ class UnidadContenidoCreate(UnidadContenidoBase):
 
 class UnidadContenidoUpdate(BaseModel):
     titulo: Optional[str] = Field(None, min_length=5, max_length=200)
-    contenido: Optional[str] = Field(None, min_length=1, max_length=50000)
+    contenido: Optional[str] = Field(None, min_length=50, max_length=50000)
     resumen: Optional[str] = Field(None, min_length=10, max_length=2000)
     palabras_clave: Optional[str] = Field(None, min_length=3, max_length=1000)
     etiquetas: Optional[str] = Field(None, min_length=3, max_length=1000)
@@ -274,18 +274,8 @@ class UnidadContenidoUpdate(BaseModel):
         return self
 
 
-class UnidadContenidoResponse(BaseModel):
-    """Response sin validaciones estrictas (para lectura de datos existentes)"""
+class UnidadContenidoResponse(UnidadContenidoBase):
     id_contenido: int
-    titulo: str
-    contenido: str
-    resumen: Optional[str] = None
-    palabras_clave: Optional[str] = None
-    etiquetas: Optional[str] = None
-    prioridad: int
-    fecha_vigencia_inicio: Optional[date] = None
-    fecha_vigencia_fin: Optional[date] = None
-    
     id_agente: int
     id_categoria: int
     id_departamento: Optional[int] = None
