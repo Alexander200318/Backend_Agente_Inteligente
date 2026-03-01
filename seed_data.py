@@ -20,24 +20,31 @@ def seed_completo():
         print("\n👥 [1/2] Creando Usuario SuperAdmin...")
         service = UsuarioService(db)
         
-        persona_schema = PersonaCreate(
-            cedula="09999999999",
-            nombre="super",
-            apellido="admin",
-            tipo_persona="administrativo",
-            email_personal="superadmin@gmail.com",
-            fecha_nacimiento=date(1990, 1, 1),
-            cargo="Administrador",
-            id_departamento=None
-        )
-        usuario_schema = UsuarioCreate(
-            username="superadmin",
-            email="admin@inst.edu.ec",
-            password="Admin123!",
-            persona=persona_schema
-        )
-        usuario = service.crear_usuario(usuario_schema)
-        print(f"  ✅ {usuario.username}")
+        # Verificar si ya existe
+        from models import Usuario
+        usuario_existente = db.query(Usuario).filter(Usuario.username == "superadmin").first()
+        if usuario_existente:
+            print(f"  ⏭️  superadmin (ya existe)")
+            usuario = usuario_existente
+        else:
+            persona_schema = PersonaCreate(
+                cedula="0999999999",
+                nombre="super",
+                apellido="admin",
+                tipo_persona="administrativo",
+                email_personal="superadmin@gmail.com",
+                fecha_nacimiento=date(1990, 1, 1),
+                cargo="Administrador",
+                id_departamento=None
+            )
+            usuario_schema = UsuarioCreate(
+                username="superadmin",
+                email="admin@inst.edu.ec",
+                password="Admin123!",
+                persona=persona_schema
+            )
+            usuario = service.crear_usuario(usuario_schema)
+            print(f"  ✅ {usuario.username}")
         
         # 2. ROLES
         print("\n🔐 [2/2] Creando Roles...")
@@ -69,26 +76,52 @@ def seed_completo():
         ]
         
         for r in roles_data:
-            rol = Rol(**r)
-            db.add(rol)
-            db.commit()
-            db.refresh(rol)
-            roles.append(rol)
-            print(f"  ✅ {rol.nombre_rol}")
+            # Verificar si el rol ya existe
+            rol_existente = db.query(Rol).filter(Rol.nombre_rol == r["nombre_rol"]).first()
+            if rol_existente:
+                print(f"  ⏭️  {rol_existente.nombre_rol} (ya existe)")
+                roles.append(rol_existente)
+            else:
+                rol = Rol(**r)
+                db.add(rol)
+                db.commit()
+                db.refresh(rol)
+                roles.append(rol)
+                print(f"  ✅ {rol.nombre_rol}")
         
-        # ASIGNAR SUPERADMIN AL USUARIO
-        UsuarioRol(
-            id_usuario=usuario.id_usuario,
-            id_rol=roles[0].id_rol,
-            asignado_por=usuario.id_usuario
-        ).save(db)
+        # ASIGNAR SUPERADMIN Y ADMIN AL USUARIO
+        # Verificar si ya existen las asignaciones
+        asignacion_super = db.query(UsuarioRol).filter(
+            UsuarioRol.id_usuario == usuario.id_usuario,
+            UsuarioRol.id_rol == roles[0].id_rol
+        ).first()
+        
+        if not asignacion_super:
+            UsuarioRol(
+                id_usuario=usuario.id_usuario,
+                id_rol=roles[0].id_rol,  # SuperAdmin
+                asignado_por=usuario.id_usuario
+            ).save(db)
+        
+        asignacion_admin = db.query(UsuarioRol).filter(
+            UsuarioRol.id_usuario == usuario.id_usuario,
+            UsuarioRol.id_rol == roles[1].id_rol
+        ).first()
+        
+        if not asignacion_admin:
+            UsuarioRol(
+                id_usuario=usuario.id_usuario,
+                id_rol=roles[1].id_rol,  # Admin
+                asignado_por=usuario.id_usuario
+            ).save(db)
         
         # ESTADÍSTICAS FINALES
         print("\n" + "=" * 80)
         print("✅ SEED COMPLETADO EXITOSAMENTE")
         print("=" * 80)
         print(f"👤 Usuario:          superadmin")
-        print(f"🔐 Roles:            {len(roles)}")
+        print(f"🔐 Roles asignados:  SuperAdmin, Admin")
+        print(f"📋 Total Roles:      {len(roles)}")
         print("=" * 80)
         
         db.close()
