@@ -64,6 +64,7 @@ class AgenteVirtualCreate(BaseModel):
     
     modelo_ia: str = Field("llama3:8b", max_length=100)
     prompt_sistema: Optional[str] = Field(None, max_length=2000)
+    prompt_especializado: Optional[str] = Field(None, max_length=2000)
     temperatura: Decimal = Field(Decimal("0.7"), ge=Decimal("0.1"), le=Decimal("2.0"))
     max_tokens: int = Field(4000, ge=100, le=8000)
     
@@ -216,6 +217,7 @@ class AgenteVirtualUpdate(BaseModel):
     
     modelo_ia: Optional[str] = Field(None, max_length=100)
     prompt_sistema: Optional[str] = Field(None, max_length=2000)
+    prompt_especializado: Optional[str] = Field(None, max_length=2000)
     temperatura: Optional[Decimal] = Field(None, ge=Decimal("0.1"), le=Decimal("2.0"))
     max_tokens: Optional[int] = Field(None, ge=100, le=8000)
     
@@ -269,6 +271,7 @@ class AgenteVirtualResponse(BaseModel):
     
     modelo_ia: str = "llama3:8b"
     prompt_sistema: Optional[str] = None
+    prompt_especializado: Optional[str] = None
     temperatura: Decimal = Decimal("0.7")
     max_tokens: int = 4000
     
